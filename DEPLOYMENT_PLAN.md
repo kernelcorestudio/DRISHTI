@@ -249,3 +249,11 @@ Recommended automated checks on every pull request:
 - `POST /predict/disaster` processes a single north-up GeoTIFF tile pair per job (large scenes must first be tiled with `data_gen/prepare_inference/create_tiles.py`).
 - `starlette 0.27.0` `TestClient` is incompatible with `httpx 0.28.1`; tests use `httpx.ASGITransport` directly.
 - Stage-2 damage classifier achieves `0.389` merged macro-F1 on held-out xBD events and should be used as triage guidance.
+
+## 33. Operations & Maintenance Schedule
+
+| Cadence | Task | Target |
+| --- | --- | --- |
+| Weekly | Clean completed upload artifacts | `inference_api/work/` |
+| Weekly | Check CDSE cache & ledger size | `cache/tiles/`, `cache/blockchain_ledger.json` |
+| Monthly | Run full test suites & dependency audit | `pytest`, `cargo test`, `npm run test:unit` |
