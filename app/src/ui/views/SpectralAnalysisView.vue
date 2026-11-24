@@ -36,6 +36,14 @@
                     </v-col>
                 </v-row>
 
+                <v-alert v-if="spectralError"
+                         dense text type="error"
+                         dismissible
+                         class="mt-3 mb-0"
+                         @input="spectralError = null">
+                    {{ spectralError }}
+                </v-alert>
+
                 <div class="d-flex align-center justify-space-between mt-3 pt-3 border-top">
                     <div class="faint text-caption">
                         <strong>Formula:</strong> {{ modeDescription }} • <strong>Bands:</strong> {{ bandsUsedLabel }}
@@ -97,9 +105,12 @@
                 </div>
 
                 <!-- Dynamic Spectral Legend -->
-                <div v-if="legendItems.length > 0" class="mt-4 pt-3 border-top">
+                <div v-if="gradientCss || legendItems.length > 0" class="mt-4 pt-3 border-top">
                     <div class="legend-header mb-2 faint text-caption">Dynamic Spectral Classification Thresholds:</div>
-                    <div class="legend-grid">
+                    <div v-if="gradientCss" class="mb-3">
+                        <div class="spectral-gradient-bar" :style="{ background: gradientCss }" />
+                    </div>
+                    <div v-if="legendItems.length > 0" class="legend-grid">
                         <div v-for="(item, idx) in legendItems" :key="idx" class="legend-item">
                             <span class="legend-swatch" :style="{ backgroundColor: item.color }" />
                             <span class="legend-label">{{ item.label }}</span>
@@ -173,20 +184,23 @@ export default class SpectralAnalysisView extends Vue {
     private currentMode = "ndvi";
     private applySharpen = false;
     private loading = false;
+    private spectralError: string | null = null;
+    private loadSeq = 0;
 
     private lrPreview = "";
     private srPreview = "";
     private modeTitle = "Normalized Difference Vegetation Index";
     private modeSubtitle = "Vegetation health, crop stress, and canopy density";
     private modeDescription = "(NIR - Red) / (NIR + Red)";
-    private bandsUsed: string[] = ["B08", "B04"];
+    private bandsUsed: string[] = ["B08 (NIR)", "B04 (Red)"];
     private legendItems: ISpectralLegendItem[] = [];
+    private gradientCss: string | null = null;
 
-    private surveyedArea = 28.5;
-    private classifiedArea = 14.2;
-    private coveragePct = 49.8;
-    private categoryName = "Healthy / Dense Crop Canopy";
-    private thresholdName = "NDVI >= 0.40";
+    private surveyedArea: number | null = null;
+    private classifiedArea: number | null = null;
+    private coveragePct: number | null = null;
+    private categoryName = "Awaiting computation";
+    private thresholdName = "--";
 
     private readonly availableModes: ISpectralModeMeta[] = [
         {
@@ -245,15 +259,15 @@ export default class SpectralAnalysisView extends Vue {
     }
 
     private get surveyedAreaLabel(): string {
-        return this.surveyedArea.toFixed(1);
+        return this.surveyedArea !== null ? this.surveyedArea.toFixed(2) : "--";
     }
 
     private get classifiedAreaLabel(): string {
-        return this.classifiedArea.toFixed(2);
+        return this.classifiedArea !== null ? this.classifiedArea.toFixed(2) : "--";
     }
 
     private get coveragePctLabel(): string {
-        return this.coveragePct.toFixed(1);
+        return this.coveragePct !== null ? this.coveragePct.toFixed(1) : "--";
     }
 
     private get categoryLabel(): string {
@@ -288,34 +302,47 @@ export default class SpectralAnalysisView extends Vue {
     }
 
     private async loadSpectral(mode: string) {
+        const seq = ++this.loadSeq;
         this.loading = true;
+        this.spectralError = null;
         try {
             const res: ISpectralResult = await fetchSpectralVisualization(mode, this.applySharpen);
+            if (seq !== this.loadSeq) {
+                return;
+            }
             if (res) {
-                this.lrPreview = res.lr_preview;
-                if (res.sr_preview) {
-                    this.srPreview = res.sr_preview;
-                }
+                this.lrPreview = res.lr_preview || "";
+                this.srPreview = res.sr_preview || "";
                 this.modeTitle = res.title;
                 this.modeSubtitle = res.subtitle;
                 this.modeDescription = res.description;
                 this.bandsUsed = res.bands_used || [];
-                if (res.legend) {
+                this.gradientCss = res.gradient_css || (res.legend && !Array.isArray(res.legend) ? res.legend.gradient_css : null) || null;
+                if (Array.isArray(res.legend_items)) {
+                    this.legendItems = res.legend_items;
+                } else if (Array.isArray(res.legend)) {
                     this.legendItems = res.legend;
+                } else {
+                    this.legendItems = [];
                 }
 
                 if (res.coverage_stats) {
-                    this.surveyedArea = res.coverage_stats.total_aoi_km2 || 28.5;
-                    this.classifiedArea = res.coverage_stats.area_km2 || 0;
-                    this.coveragePct = res.coverage_stats.area_pct || 0;
+                    this.surveyedArea = res.coverage_stats.total_aoi_km2 ?? null;
+                    this.classifiedArea = res.coverage_stats.area_km2 ?? null;
+                    this.coveragePct = res.coverage_stats.area_pct ?? null;
                     this.categoryName = res.coverage_stats.category || "";
                     this.thresholdName = res.coverage_stats.threshold || "";
                 }
             }
         } catch (e) {
+            if (seq === this.loadSeq) {
+                this.spectralError = e instanceof Error ? e.message : String(e);
+            }
             console.error("Load spectral error:", e);
         } finally {
-            this.loading = false;
+            if (seq === this.loadSeq) {
+                this.loading = false;
+            }
         }
     }
 }
@@ -327,15 +354,15 @@ export default class SpectralAnalysisView extends Vue {
     align-items: center;
     gap: 10px;
     padding: 10px 12px;
-    background: #0a0a0a;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: var(--rahat-surface-2);
+    border: 1px solid var(--rahat-border);
     border-radius: 8px;
     cursor: pointer;
     transition: all 0.2s ease;
 
     &:hover {
-        background: #141414;
-        border-color: rgba(255, 255, 255, 0.2);
+        background: var(--rahat-accent-soft);
+        border-color: var(--rahat-border-strong);
     }
 
     &--active {
@@ -352,7 +379,7 @@ export default class SpectralAnalysisView extends Vue {
     width: 28px;
     height: 28px;
     border-radius: 6px;
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--rahat-chip);
 }
 
 .mode-title {
@@ -367,7 +394,7 @@ export default class SpectralAnalysisView extends Vue {
 }
 
 .border-top {
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    border-top: 1px solid var(--rahat-border);
 }
 
 .spectral-side-by-side {
@@ -381,8 +408,8 @@ export default class SpectralAnalysisView extends Vue {
 }
 
 .spectral-view-box {
-    background: #0c0c0c;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: var(--rahat-surface-2);
+    border: 1px solid var(--rahat-border);
     border-radius: 8px;
     padding: 12px;
 }
@@ -403,7 +430,7 @@ export default class SpectralAnalysisView extends Vue {
 .view-img-wrapper {
     width: 100%;
     aspect-ratio: 1 / 1;
-    background: #000;
+    background: var(--rahat-map-bg);
     border-radius: 6px;
     overflow: hidden;
 
@@ -419,6 +446,12 @@ export default class SpectralAnalysisView extends Vue {
     }
 }
 
+.spectral-gradient-bar {
+    height: 10px;
+    border-radius: 999px;
+    border: 1px solid var(--rahat-border);
+}
+
 .legend-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -429,10 +462,10 @@ export default class SpectralAnalysisView extends Vue {
     display: flex;
     align-items: center;
     gap: 8px;
-    background: rgba(255, 255, 255, 0.02);
+    background: var(--rahat-card);
     padding: 6px 10px;
     border-radius: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--rahat-border);
 }
 
 .legend-swatch {
@@ -454,8 +487,8 @@ export default class SpectralAnalysisView extends Vue {
 }
 
 .impact-kpi-card {
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: var(--rahat-surface-2);
+    border: 1px solid var(--rahat-border);
     border-radius: 8px;
     padding: 16px;
     height: 100%;
@@ -470,7 +503,7 @@ export default class SpectralAnalysisView extends Vue {
     .kpi-num {
         font-size: 26px;
         font-weight: 700;
-        color: #38bdf8;
+        color: var(--rahat-info);
         margin: 4px 0;
 
         .unit {

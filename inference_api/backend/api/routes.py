@@ -10,7 +10,7 @@ FastAPI Routes for SIH26142 Super Resolution Mapping API.
 from typing import Any
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 import numpy as np
 import io
 import base64
@@ -20,6 +20,8 @@ import json
 from datetime import datetime, timezone
 import uuid
 import tempfile
+import threading
+import tifffile
 from pathlib import Path
 
 from backend.ingestion.copernicus_client import CopernicusClient
@@ -55,6 +57,7 @@ infra_detector = InfrastructureDetector()
 nr_evaluator = NoReferenceEvaluator(device="cpu")
 provenance_manager = get_provenance_manager()
 cloud_mask_detector = CloudMaskDetector()
+_session_lock = threading.RLock()
 
 # In-memory session cache for current active imagery
 current_session: dict[str, Any] = {
@@ -162,22 +165,110 @@ def heatmap_to_base64_png(heatmap: np.ndarray, cloud_mask: np.ndarray = None) ->
     b64_str = base64.b64encode(buf.getvalue()).decode("utf-8")
     return f"data:image/png;base64,{b64_str}"
 
+def _find_cached_tile(bbox: list[float] | None, aoi_id: str | None) -> tuple[np.ndarray, dict] | None:
+    """Finds the best-matching cached Sentinel-2 .npy tile for offline fallback."""
+    cache_dir = BASE_DIR / "cache" / "tiles"
+    if not cache_dir.is_dir():
+        return None
+    if aoi_id and (cache_dir / f"{aoi_id}_real.npy").exists():
+        arr = np.load(cache_dir / f"{aoi_id}_real.npy")
+        meta = {}
+        meta_path = cache_dir / f"{aoi_id}_real.json"
+        if meta_path.exists():
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        meta.setdefault("bbox", bbox)
+        meta["source"] = "Local Cached Sentinel-2 L2A Tile (Preset Cache)"
+        return arr, meta
+
+    best_entry: tuple[float, Path, dict] | None = None
+    target_center = (
+        ((bbox[0] + bbox[2]) / 2.0, (bbox[1] + bbox[3]) / 2.0)
+        if bbox and len(bbox) == 4
+        else None
+    )
+    for npy_path in sorted(cache_dir.glob("*.npy")):
+        if "_multitemporal_" in npy_path.name:
+            continue
+        meta_path = npy_path.with_suffix(".json")
+        meta = {}
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except Exception:
+                meta = {}
+        cand_bbox = meta.get("bbox")
+        if target_center and isinstance(cand_bbox, list) and len(cand_bbox) == 4:
+            cx = (float(cand_bbox[0]) + float(cand_bbox[2])) / 2.0
+            cy = (float(cand_bbox[1]) + float(cand_bbox[3])) / 2.0
+            dist = (cx - target_center[0]) ** 2 + (cy - target_center[1]) ** 2
+        else:
+            dist = 9999.0
+        if best_entry is None or dist < best_entry[0]:
+            best_entry = (dist, npy_path, meta)
+
+    if best_entry is None:
+        return None
+    _, npy_path, meta = best_entry
+    arr = np.load(npy_path)
+    meta = dict(meta)
+    meta["source"] = meta.get("source") or "Local Cached Sentinel-2 L2A Tile (Offline Fallback)"
+    return arr, meta
+
+
+def _format_blockchain_ui(record: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not record:
+        return None
+    mode = record.get("mode", "simulation")
+    ts = record.get("processedTimestamp")
+    ts_iso = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(ts)) if ts else None
+    return {
+        "tile_id": record.get("tileId", "sih_tile_001"),
+        "sha256": record.get("imageHash", ""),
+        "tx_hash": record.get("txHash", ""),
+        "status": "verified" if mode == "polygon_amoy" else "simulated",
+        "explorer_url": record.get("txLink", ""),
+        "timestamp": ts_iso,
+        "mode": mode,
+    }
+
+
+def _parse_geotiff_bbox(raw_bytes: bytes) -> list[float] | None:
+    try:
+        with tifffile.TiffFile(io.BytesIO(raw_bytes)) as tif:
+            page = tif.pages[0]
+            scale_tag = page.tags.get(33550)
+            tie_tag = page.tags.get(33922)
+            if scale_tag is None or tie_tag is None:
+                return None
+            sx, sy = float(scale_tag.value[0]), float(scale_tag.value[1])
+            tx, ty = float(tie_tag.value[3]), float(tie_tag.value[4])
+            h, w = page.shape[:2]
+            return [round(tx, 6), round(ty - sy * h, 6), round(tx + sx * w, 6), round(ty, 6)]
+    except Exception:
+        return None
+
+
 class FetchTileRequest(BaseModel):
-    bbox: list[float]
-    aoi_id: str = "custom_aoi"
+    bbox: list[float] | None = None
+    preset_id: str | None = None
+    aoi_id: str | None = None
     max_cloud: int = 20
     time_window: tuple[str, str] | None = None
+    use_cache: bool = True
 
 class PresetRequest(BaseModel):
     preset_id: str
 
 class SRRequest(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
     num_mc_samples: int = 8
+    mc_samples: int | None = None
     scale_factor: int = 4
     model_name: str = "hat"
     apply_unsharp: bool = False
     apply_realesrgan_sharpen: bool = False
     enable_multi_temporal: bool = False
+    use_tiling: bool = True
     visualization_mode: str = "true_color"
 
 class VisualizeRequest(BaseModel):
@@ -192,37 +283,52 @@ class MultiTemporalRequest(BaseModel):
 @router.get("/presets")
 async def list_presets():
     """Returns real curated Sentinel-2 demonstration AOIs."""
-    return {"presets": CopernicusClient.get_demo_presets()}
+    presets = []
+    for p in CopernicusClient.get_demo_presets():
+        item = dict(p)
+        item.setdefault("name", item.get("title", item.get("id", "")))
+        item.setdefault("source", "Copernicus CDSE Sentinel-2 L2A")
+        presets.append(item)
+    return {"presets": presets}
 
 @router.post("/fetch-tile")
-async def fetch_tile(req: FetchTileRequest):
+async def fetch_tile(req: FetchTileRequest | None = None):
     """
-    Fetches real Sentinel-2 L2A tile from Copernicus CDSE using bounding box.
-    Caches to disk so repeated clicks hit local cache with 0 ms API delay.
+    Fetches real Sentinel-2 L2A tile from Copernicus CDSE or local calibrated cache.
     Loads genuine independent high-resolution ground truth reference (SPOT 6/7 1.5m).
     """
+    if req is None:
+        req = FetchTileRequest(preset_id="punjab_agri", aoi_id="punjab_agri")
+
+    presets = {p["id"]: p for p in CopernicusClient.get_demo_presets()}
+    resolved_aoi_id = req.aoi_id or req.preset_id or "custom_aoi"
+    preset_cfg = presets.get(resolved_aoi_id) or (presets.get("punjab_agri") if req.bbox is None else None)
+    raw_bbox = req.bbox or (list(preset_cfg["bbox"]) if preset_cfg else [75.30, 30.55, 75.36, 30.60])
+    if req.aoi_id is None and req.preset_id is None and preset_cfg is not None:
+        resolved_aoi_id = str(preset_cfg["id"])
+
+    default_window = ("2024-03-01", "2024-05-30")
+    if preset_cfg and preset_cfg.get("time_range"):
+        tr = preset_cfg["time_range"]
+        default_window = (str(tr["from"])[:10], str(tr["to"])[:10])
+    time_window = req.time_window or default_window
+    max_cloud = req.max_cloud if req.max_cloud is not None else int((preset_cfg or {}).get("max_cloud", 20))
+
     try:
-        bbox = copernicus_client.sanitize_bbox(req.bbox)
-        time_window = req.time_window or ("2026-01-01", "2026-10-01")
-        max_cloud = req.max_cloud if req.max_cloud is not None else 15
-        
+        bbox = copernicus_client.sanitize_bbox(raw_bbox)
         tile_data, meta = copernicus_client.fetch_sentinel2_tile(
             bbox_coords=bbox,
             time_window=time_window,
             max_cloud=max_cloud,
-            preset_id=req.aoi_id if req.aoi_id != "custom_aoi" else None,
-            use_cache=False
+            preset_id=resolved_aoi_id if resolved_aoi_id != "custom_aoi" else None,
+            use_cache=req.use_cache
         )
     except Exception as e:
-        # Fallback to local cached preset if offline or credentials unconfigured
-        cached_candidates = list((BASE_DIR / "cache" / "tiles").glob("*.npy"))
-        if cached_candidates:
-            tile_data = np.load(cached_candidates[0])
-            meta = {
-                "source": "Local Cached Sentinel-2 L2A Tile (Offline Fallback)",
-                "bands": ["B04", "B03", "B02", "B08"],
-                "bbox": req.bbox
-            }
+        bbox = copernicus_client.sanitize_bbox(raw_bbox)
+        cached = _find_cached_tile(bbox=bbox, aoi_id=resolved_aoi_id)
+        if cached is not None:
+            tile_data, meta = cached
+            meta.setdefault("bbox", bbox)
         else:
             raise HTTPException(status_code=502, detail=f"Failed to fetch satellite imagery: {str(e)}")
 
@@ -233,8 +339,8 @@ async def fetch_tile(req: FetchTileRequest):
     # Strictly keyed to AOI and coordinates — returns None if no matching reference exists
     target_hr_shape = (lr_rgb.shape[0] * 4, lr_rgb.shape[1] * 4, 3)
     ref_hr, ref_provenance, ref_info = load_reference_for_session(
-        aoi_id=req.aoi_id,
-        bbox=req.bbox,
+        aoi_id=resolved_aoi_id,
+        bbox=bbox,
         target_shape=target_hr_shape
     )
     has_ref = ref_hr is not None
@@ -263,42 +369,43 @@ async def fetch_tile(req: FetchTileRequest):
         )
 
     # Store in active session
-    current_session["lr"] = lr_rgb
-    current_session["lr_raw"] = tile_data
-    current_session["sr"] = None
-    current_session["sr_bands"] = None
-    current_session["visualization_mode"] = "true_color"
-    current_session["confidence_map"] = None
-    current_session["cloud_mask"] = cloud_mask
-    current_session["cloud_mask_sr"] = None
-    current_session["cloud_coverage_pct"] = cloud_coverage_pct
-    current_session["cloud_warning"] = cloud_warning
-    current_session["ref_hr"] = ref_hr
-    current_session["ref_file"] = ref_provenance
-    current_session["ref_info"] = ref_info
-    current_session["has_reference"] = has_ref
-    current_session["is_scientific_ground_truth"] = is_scientific
-    current_session["reference_tier"] = ref_tier
-    current_session["reference_tier_label"] = ref_tier_label
-    current_session["metadata"] = {
-        "aoi_id": req.aoi_id,
-        "source": meta.get("source", "Copernicus CDSE Sentinel-2 L2A"),
-        "input_resolution": "10.0m GSD (Sentinel-2 L2A)",
-        "target_resolution": "2.5m GSD (<4m target achieved)",
-        "reference_file": ref_provenance if has_ref else "None (Unpaired AOI)",
-        "has_reference": has_ref,
-        "is_scientific_ground_truth": is_scientific,
-        "reference_tier": ref_tier,
-        "reference_tier_label": ref_tier_label,
-        "bands": meta.get("bands", ["B04 (Red)", "B03 (Green)", "B02 (Blue)", "B08 (NIR)"]),
-        "dimensions": f"{lr_rgb.shape[1]} x {lr_rgb.shape[0]} px",
-        "bbox": req.bbox,
-        "cloud_coverage_pct": cloud_coverage_pct,
-        "cloud_warning": cloud_warning,
-        "scene_name": meta.get("scene_name", "Sentinel-2 MSI"),
-        "acquisition_date": meta.get("acquisition_date", "Live Orbit Pass"),
-        "is_live_stream": meta.get("is_live_satellite_stream", True)
-    }
+    with _session_lock:
+        current_session["lr"] = lr_rgb
+        current_session["lr_raw"] = tile_data
+        current_session["sr"] = None
+        current_session["sr_bands"] = None
+        current_session["visualization_mode"] = "true_color"
+        current_session["confidence_map"] = None
+        current_session["cloud_mask"] = cloud_mask
+        current_session["cloud_mask_sr"] = None
+        current_session["cloud_coverage_pct"] = cloud_coverage_pct
+        current_session["cloud_warning"] = cloud_warning
+        current_session["ref_hr"] = ref_hr
+        current_session["ref_file"] = ref_provenance
+        current_session["ref_info"] = ref_info
+        current_session["has_reference"] = has_ref
+        current_session["is_scientific_ground_truth"] = is_scientific
+        current_session["reference_tier"] = ref_tier
+        current_session["reference_tier_label"] = ref_tier_label
+        current_session["metadata"] = {
+            "aoi_id": resolved_aoi_id,
+            "source": meta.get("source", "Copernicus CDSE Sentinel-2 L2A"),
+            "input_resolution": "10.0m GSD (Sentinel-2 L2A)",
+            "target_resolution": "2.5m GSD (<4m target achieved)",
+            "reference_file": ref_provenance if has_ref else "None (Unpaired AOI)",
+            "has_reference": has_ref,
+            "is_scientific_ground_truth": is_scientific,
+            "reference_tier": ref_tier,
+            "reference_tier_label": ref_tier_label,
+            "bands": meta.get("bands", ["B04 (Red)", "B03 (Green)", "B02 (Blue)", "B08 (NIR)"]),
+            "dimensions": f"{lr_rgb.shape[1]} x {lr_rgb.shape[0]} px",
+            "bbox": bbox,
+            "cloud_coverage_pct": cloud_coverage_pct,
+            "cloud_warning": cloud_warning,
+            "scene_name": meta.get("scene_name", "Sentinel-2 MSI"),
+            "acquisition_date": meta.get("acquisition_date", "Live Orbit Pass"),
+            "is_live_stream": meta.get("is_live_satellite_stream", True)
+        }
 
     if is_scientific:
         ref_message = f"Genuinely independent SPOT 1.5m Ground Truth loaded ({ref_info.get('file_name', '')}). Paired metrics active."
@@ -310,16 +417,18 @@ async def fetch_tile(req: FetchTileRequest):
     # Fetch Esri basemap for dynamic per-AOI color matching
     esri_basemap_lr = get_or_fetch_esri_basemap(
         bbox=bbox,
-        aoi_id=req.aoi_id,
+        aoi_id=resolved_aoi_id,
         target_shape=(lr_rgb.shape[0], lr_rgb.shape[1])
     )
     current_session["esri_basemap"] = esri_basemap_lr
 
     cloud_preview = generate_cloud_overlay_base64(cloud_mask)
     vis_info = spectral_engine.render("true_color", tile_data)
+    lr_preview_b64 = array_to_base64_png(lr_rgb, esri_target=esri_basemap_lr)
 
     return {
         "status": "success",
+        "aoi_id": resolved_aoi_id,
         "metadata": current_session["metadata"],
         "has_reference": has_ref,
         "is_scientific_ground_truth": is_scientific,
@@ -333,9 +442,11 @@ async def fetch_tile(req: FetchTileRequest):
             "description": vis_info["description"],
             "bands_used": vis_info["bands_used"],
             "is_index": False,
-            "legend": vis_info["legend"]
+            "legend": vis_info["legend"],
+            "legend_items": vis_info["legend_items"],
         },
-        "lr_preview": array_to_base64_png(lr_rgb, esri_target=esri_basemap_lr),
+        "lr_preview": lr_preview_b64,
+        "preview_base64": lr_preview_b64,
         "hr_preview": array_to_base64_png(ref_hr) if has_ref else None,
         "cloud_mask_preview": cloud_preview,
         "cloud_coverage_pct": cloud_coverage_pct,
@@ -421,9 +532,13 @@ async def fetch_multi_temporal(req: MultiTemporalRequest | None = None):
 
     # Load independent reference according to determined tier
     target_hr_shape = (int(fused_lr.shape[0]) * 4, int(fused_lr.shape[1]) * 4, 3)
-    active_bbox = current_session.get("metadata", {}).get("bbox")
+    resolved_aoi_id = req.aoi_id or current_session.get("metadata", {}).get("aoi_id") or "punjab_agri"
+    if not active_bbox:
+        presets = {p["id"]: p for p in CopernicusClient.get_demo_presets()}
+        if resolved_aoi_id in presets:
+            active_bbox = list(presets[resolved_aoi_id]["bbox"])
     ref_hr, ref_provenance, ref_info = load_reference_for_session(
-        aoi_id=req.aoi_id,
+        aoi_id=resolved_aoi_id,
         bbox=active_bbox,
         target_shape=target_hr_shape
     )
@@ -439,8 +554,6 @@ async def fetch_multi_temporal(req: MultiTemporalRequest | None = None):
     current_session["is_scientific_ground_truth"] = is_scientific
     current_session["reference_tier"] = ref_tier
     current_session["reference_tier_label"] = ref_tier_label
-
-    resolved_aoi_id = req.aoi_id or current_session.get("metadata", {}).get("aoi_id") or "punjab_agri"
 
     current_session["metadata"] = {
         "aoi_id": resolved_aoi_id,
@@ -529,13 +642,16 @@ async def super_resolve(req: SRRequest | None = None):
     if req is None:
         req = SRRequest()
 
-    if current_session["lr"] is None:
-        p = CopernicusClient.get_demo_presets()[0]
-        _ = await fetch_tile(FetchTileRequest(bbox=list(p["bbox"]), aoi_id=str(p["id"])))
+    mc_samples = max(1, int(req.mc_samples if req.mc_samples is not None else req.num_mc_samples))
 
-    # Synchronize model architecture and scale factor
-    if req.model_name != sr_engine.model_name or req.scale_factor != sr_engine.scale_factor:
-        sr_engine.switch_model(model_name=req.model_name, scale_factor=req.scale_factor)
+    with _session_lock:
+        if current_session["lr"] is None:
+            p = CopernicusClient.get_demo_presets()[0]
+            _ = await fetch_tile(FetchTileRequest(bbox=list(p["bbox"]), aoi_id=str(p["id"])))
+
+        # Synchronize model architecture and scale factor
+        if req.model_name.lower() != sr_engine.model_name or req.scale_factor != sr_engine.scale_factor:
+            sr_engine.switch_model(model_name=req.model_name, scale_factor=req.scale_factor)
 
     active_aoi = str(current_session.get("metadata", {}).get("aoi_id", "custom_drawn_aoi"))
     active_bbox = current_session.get("metadata", {}).get("bbox")
@@ -588,8 +704,8 @@ async def super_resolve(req: SRRequest | None = None):
     # 1. Run real PyTorch / ONNX deep learning super-resolution with uncertainty quantification and cloud mask
     mean_sr, mc_variance, mc_stats = sr_engine.predict_with_uncertainty(
         input_lr,
-        num_samples=req.num_mc_samples,
-        use_tiling=True,
+        num_samples=mc_samples,
+        use_tiling=req.use_tiling,
         cloud_mask=cloud_mask,
         lr_raw=current_session.get("lr_raw")
     )
@@ -601,10 +717,11 @@ async def super_resolve(req: SRRequest | None = None):
     print(f"[Inference Execution] MC Variance range: min={mc_stats.get('raw_variance_min', 0.0):.2e}, max={mc_stats.get('raw_variance_max', 0.0):.2e}, mean={mc_stats.get('raw_variance_mean', 0.0):.2e}")
     print(f"[Inference Execution] Unsharp Mask Applied: {req.apply_unsharp} (radius=1.0, amount=1.2, preserve_range=True)")
 
-    # Store base SR in session (Strictly raw HAT output for metrics & evaluation)
+    # Store base SR in session (Strictly raw model output for metrics & evaluation)
     current_session["sr"] = mean_sr
     active_mode = getattr(req, "visualization_mode", "true_color") or "true_color"
-    raw_bands = extract_bands_dict(current_session["lr_raw"])
+    lr_source = current_session["lr_raw"] if current_session.get("lr_raw") is not None else current_session["lr"]
+    raw_bands = extract_bands_dict(lr_source)
     sr_bands = {
         "B04": mean_sr[:, :, 0],
         "B03": mean_sr[:, :, 1],
@@ -799,11 +916,11 @@ async def super_resolve(req: SRRequest | None = None):
     else:
         ref_message = "No ground truth reference available for this custom AOI. Evaluated with No-Reference Assessment."
 
-    # Register Tile on Polygon Amoy Blockchain Provenance Module
+    # Register Tile on Polygon Amoy Blockchain Provenance Module (hash raw SR consistently with /verify & /register)
     tile_id = current_session.get("metadata", {}).get("aoi_id", "sih_tile_001")
     blockchain_record = provenance_manager.register_tile(
         tile_id=tile_id,
-        image_data=display_sr,
+        image_data=mean_sr,
         bbox=active_bbox,
         model_name=sr_engine.model_name.upper(),
         scale_factor=sr_engine.scale_factor,
@@ -816,8 +933,21 @@ async def super_resolve(req: SRRequest | None = None):
     )
     current_session["blockchain_record"] = blockchain_record
 
+    confidence_heatmap_b64 = heatmap_to_base64_png(usp_results["confidence_map"], cloud_mask=cloud_mask_sr)
+    nr_fallback = no_reference_metrics or nr_evaluator.evaluate(mean_sr)
+    ui_metrics = {
+        "psnr": validation_metrics.get("psnr_db") if is_scientific else None,
+        "ssim": validation_metrics.get("ssim") if is_scientific else None,
+        "sam": validation_metrics.get("sam_deg") if is_scientific else round(usp_results["sam_degrees"], 2),
+        "ergas": validation_metrics.get("ergas") if is_scientific else None,
+        "niqe": nr_fallback.get("niqe"),
+        "brisque": nr_fallback.get("brisque"),
+    }
+
     return {
         "status": "success",
+        "model": sr_engine.model_name,
+        "scale_factor": sr_engine.scale_factor,
         "assessment_mode": assessment_mode,
         "inference_time_ms": inference_duration_ms,
         "device": sr_engine.device.upper(),
@@ -828,8 +958,8 @@ async def super_resolve(req: SRRequest | None = None):
         "realesrgan_sharpened": bool(req.apply_realesrgan_sharpen and realesrgan_sharpener.is_ready),
         "post_processing_stage": post_proc_label,
         "pipeline_stages": [
-            f"Stage 1: {sr_engine.model_name.upper()} (4x SR, {10.0/sr_engine.scale_factor:.1f}m GSD)",
-            "Scientific Metrics on Raw HAT Output",
+            f"Stage 1: {sr_engine.model_name.upper()} ({sr_engine.scale_factor}x SR, {10.0/sr_engine.scale_factor:.1f}m GSD)",
+            "Scientific Metrics on Raw SR Output",
             f"Stage 2 Preview: {post_proc_label}"
         ],
         "visualization_mode": active_mode,
@@ -841,11 +971,16 @@ async def super_resolve(req: SRRequest | None = None):
             "bands_used": vis_res["bands_used"],
             "is_index": vis_res["is_index"],
             "stats": vis_res["stats"],
-            "legend": vis_res["legend"]
+            "legend": vis_res["legend"],
+            "legend_items": vis_res["legend_items"],
         },
         "lr_preview": lr_preview_b64,
         "sr_preview": sr_preview_b64,
-        "confidence_heatmap": heatmap_to_base64_png(usp_results["confidence_map"], cloud_mask=cloud_mask_sr),
+        "hr_preview": array_to_base64_png(current_session["ref_hr"]) if (has_ref and "ref_hr" in current_session) else None,
+        "confidence_heatmap": confidence_heatmap_b64,
+        "confidence_heatmap_preview": confidence_heatmap_b64,
+        "mean_confidence": round(usp_results["avg_confidence"] / 100.0, 4),
+        "hallucination_pct": round(100.0 - usp_results["avg_confidence"], 1),
         "cloud_mask_preview": generate_cloud_overlay_base64(cloud_mask_sr),
         "cloud_coverage_pct": usp_results["cloud_coverage_pct"],
         "has_clouds": (usp_results["cloud_coverage_pct"] > 0.0),
@@ -860,9 +995,11 @@ async def super_resolve(req: SRRequest | None = None):
         "reference_tier_label": ref_tier_label,
         "validation_metrics": validation_metrics,
         "no_reference_metrics": no_reference_metrics,
-        "reference_provenance": current_session.get("ref_file") if has_ref else "None (Unpaired AOI — No False Fallback)",
+        "metrics": ui_metrics,
+        "reference_provenance": current_session.get("ref_file") if has_ref else "None (Unpaired AOI - No False Fallback)",
         "reference_message": ref_message,
         "blockchain_provenance": blockchain_record,
+        "blockchain_record": _format_blockchain_ui(blockchain_record),
         "satellite_metadata": current_session.get("metadata", {}),
         "model_info": {
             "checkpoint_file": sr_engine.checkpoint_meta.get("checkpoint_file", "hat_worldstrat_x4.onnx"),
@@ -873,7 +1010,7 @@ async def super_resolve(req: SRRequest | None = None):
             "model_name": sr_engine.checkpoint_meta.get("model_name", sr_engine.model_name.upper()),
             "model_architecture": sr_engine.checkpoint_meta.get("architecture", sr_engine.model_name.upper()),
             "dataset_provenance": sr_engine.checkpoint_meta.get("training_dataset", "WorldStrat Sentinel-2 <-> SPOT 1.5m"),
-            "dropout_mode": "TTA Dihedral Ensemble (Active)" if sr_engine.is_onnx else f"MC-Dropout active ({req.num_mc_samples} stochastic passes, force_dropout=True, BN frozen)"
+            "dropout_mode": "TTA Dihedral Ensemble (Active)" if sr_engine.is_onnx else f"MC-Dropout active ({mc_samples} stochastic passes, force_dropout=True, BN frozen)"
         },
         "mc_variance_stats": mc_stats,
         "usp_metrics": {
@@ -887,15 +1024,44 @@ async def super_resolve(req: SRRequest | None = None):
 
 @router.post("/upload")
 async def upload_custom_image(file: UploadFile = File(...)):
-    """Upload custom real Sentinel-2 GeoTIFF or PNG."""
+    """Upload custom real Sentinel-2 GeoTIFF (multi-band or RGB) or PNG."""
     contents = await file.read()
-    image = Image.open(io.BytesIO(contents)).convert("RGB")
-    if image.width > 256 or image.height > 256:
-        image = image.resize((128, 128), Image.Resampling.BILINEAR)
-    
-    lr_arr = np.array(image).astype(np.float32) / 255.0
+    if not contents:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
-    cloud_mask = cloud_mask_detector.detect(lr_arr)
+    filename = (file.filename or "").lower()
+    extracted_bbox: list[float] | None = None
+    try:
+        if filename.endswith((".tif", ".tiff", ".gtiff")):
+            extracted_bbox = _parse_geotiff_bbox(contents)
+            raw = np.asarray(tifffile.imread(io.BytesIO(contents)))
+            if raw.ndim == 2:
+                raw = np.stack([raw, raw, raw], axis=-1)
+            elif raw.ndim == 3 and raw.shape[0] <= 12 and raw.shape[2] > 12:
+                # Channels-first GeoTIFF (C, H, W) -> (H, W, C)
+                raw = np.transpose(raw, (1, 2, 0))
+            if raw.dtype == np.uint8:
+                arr_full = raw.astype(np.float32) / 255.0
+            else:
+                arr_full = np.nan_to_num(raw.astype(np.float32), nan=0.0, posinf=1.0, neginf=0.0)
+                if float(np.nanmax(arr_full)) > 2.0:
+                    arr_full = arr_full / (65535.0 if raw.dtype == np.uint16 and float(np.nanmax(arr_full)) > 10000.0 else 10000.0)
+            arr_full = np.clip(arr_full, 0.0, 1.0)
+            if arr_full.shape[0] > 256 or arr_full.shape[1] > 256:
+                import cv2
+                arr_full = cv2.resize(arr_full, (128, 128), interpolation=cv2.INTER_LINEAR)
+            lr_arr = arr_full[:, :, :3] if arr_full.shape[2] >= 3 else np.repeat(arr_full[:, :, :1], 3, axis=-1)
+            lr_raw_arr = arr_full
+        else:
+            image = Image.open(io.BytesIO(contents)).convert("RGB")
+            if image.width > 256 or image.height > 256:
+                image = image.resize((128, 128), Image.Resampling.BILINEAR)
+            lr_arr = np.array(image).astype(np.float32) / 255.0
+            lr_raw_arr = lr_arr
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid image or GeoTIFF upload: {exc}")
+
+    cloud_mask = cloud_mask_detector.detect(lr_raw_arr)
     cloud_pixels = int(np.sum(cloud_mask > 0))
     total_pixels = cloud_mask.size
     cloud_coverage_pct = round((cloud_pixels / float(total_pixels)) * 100.0, 2)
@@ -908,38 +1074,43 @@ async def upload_custom_image(file: UploadFile = File(...)):
             "Cloud-occluded pixels will be masked to prevent hallucinated infrastructure."
         )
 
-    current_session["lr"] = lr_arr
-    current_session["lr_raw"] = lr_arr
-    current_session["ref_hr"] = None
-    current_session["ref_file"] = None
-    current_session["ref_info"] = None
-    current_session["has_reference"] = False
-    current_session["sr"] = None
-    current_session["confidence_map"] = None
-    current_session["cloud_mask"] = cloud_mask
-    current_session["cloud_mask_sr"] = None
-    current_session["cloud_coverage_pct"] = cloud_coverage_pct
-    current_session["cloud_warning"] = cloud_warning
-    current_session["metadata"] = {
-        "aoi_id": "user_upload",
-        "source": "User Uploaded Satellite Tile",
-        "input_resolution": "10.0m GSD (Uploaded)",
-        "target_resolution": "2.5m GSD",
-        "reference_file": "None (User Uploaded — No Ground Truth Available)",
-        "has_reference": False,
-        "bands": ["RGB"],
-        "dimensions": f"{lr_arr.shape[1]} x {lr_arr.shape[0]} px",
-        "cloud_coverage_pct": cloud_coverage_pct,
-        "cloud_warning": cloud_warning
-    }
+    with _session_lock:
+        current_session["lr"] = lr_arr
+        current_session["lr_raw"] = lr_raw_arr
+        current_session["ref_hr"] = None
+        current_session["ref_file"] = None
+        current_session["ref_info"] = None
+        current_session["has_reference"] = False
+        current_session["sr"] = None
+        current_session["sr_bands"] = None
+        current_session["confidence_map"] = None
+        current_session["cloud_mask"] = cloud_mask
+        current_session["cloud_mask_sr"] = None
+        current_session["cloud_coverage_pct"] = cloud_coverage_pct
+        current_session["cloud_warning"] = cloud_warning
+        current_session["metadata"] = {
+            "aoi_id": "user_upload",
+            "source": "User Uploaded Satellite Tile",
+            "input_resolution": "10.0m GSD (Uploaded)",
+            "target_resolution": "2.5m GSD",
+            "reference_file": "None (User Uploaded — No Ground Truth Available)",
+            "has_reference": False,
+            "bands": [f"{lr_raw_arr.shape[2]}-band" if lr_raw_arr.ndim == 3 else "RGB"],
+            "dimensions": f"{lr_arr.shape[1]} x {lr_arr.shape[0]} px",
+            "bbox": extracted_bbox,
+            "cloud_coverage_pct": cloud_coverage_pct,
+            "cloud_warning": cloud_warning
+        }
 
     cloud_preview = generate_cloud_overlay_base64(cloud_mask)
+    lr_preview_b64 = array_to_base64_png(lr_arr)
 
     return {
         "status": "success",
         "metadata": current_session["metadata"],
         "has_reference": False,
-        "lr_preview": array_to_base64_png(lr_arr),
+        "lr_preview": lr_preview_b64,
+        "preview_base64": lr_preview_b64,
         "hr_preview": None,
         "cloud_mask_preview": cloud_preview,
         "cloud_coverage_pct": cloud_coverage_pct,
@@ -970,11 +1141,18 @@ async def detect_infrastructure():
     current_session["infrastructure_overlay"] = res["overlay_base64"]
     current_session["infrastructure_summary"] = res["summary"]
 
+    summary = res["summary"]
     return {
         "status": "success",
+        "building_count": summary["buildings_count"],
+        "road_count": summary["road_segments_count"],
+        "total_road_length_km": summary["roads_length_km"],
+        "total_road_area_km2": summary.get("total_road_area_km2", 0.0),
+        "total_built_area_km2": summary.get("total_built_area_km2", 0.0),
+        "overlay_preview": res["overlay_base64"],
         "infrastructure_overlay": res["overlay_base64"],
         "unfiltered_overlay": res.get("unfiltered_overlay_base64"),
-        "infrastructure_summary": res["summary"],
+        "infrastructure_summary": summary,
         "geojson": res["geojson"]
     }
 
@@ -1005,45 +1183,32 @@ async def download_result(item_type: str, format: str = "png"):
         export_stack = np.stack(bands_list, axis=-1).astype(np.float32)
 
         try:
-            from osgeo import gdal, osr
-            mem_driver = gdal.GetDriverByName("MEM")
-            C = export_stack.shape[2]
-            ds = mem_driver.Create("", W, H, C, gdal.GDT_Float32)
-
-            srs = osr.SpatialReference()
-            srs.ImportFromEPSG(4326)
-            ds.SetProjection(srs.ExportToWkt())
-
-            min_lon, min_lat, max_lon, max_lat = active_bbox
-            res_x = (max_lon - min_lon) / float(W)
-            res_y = (max_lat - min_lat) / float(H)
-            ds.SetGeoTransform([min_lon, res_x, 0.0, max_lat, 0.0, -res_y])
-
-            band_names = ["B04_Red", "B03_Green", "B02_Blue", "B08_NIR"]
-            for b in range(C):
-                rb = ds.GetRasterBand(b + 1)
-                rb.WriteArray(export_stack[:, :, b])
-                if b < len(band_names):
-                    rb.SetDescription(band_names[b])
-
-            gtiff_driver = gdal.GetDriverByName("GTiff")
-            temp_tif = Path(tempfile.gettempdir()) / f"sih26142_sr_{uuid.uuid4().hex[:8]}.tif"
-            out_ds = gtiff_driver.CreateCopy(str(temp_tif), ds)
-            out_ds.FlushCache()
-            out_ds = None
-            ds = None
-
-            with open(temp_tif, "rb") as f:
-                tif_bytes = f.read()
-            temp_tif.unlink(missing_ok=True)
+            min_lon, min_lat, max_lon, max_lat = [float(x) for x in (active_bbox or [75.30, 30.55, 75.36, 30.60])[:4]]
+            res_x = abs(max_lon - min_lon) / float(max(W, 1))
+            res_y = abs(max_lat - min_lat) / float(max(H, 1))
+            # GeoTIFF tags: ModelPixelScale (33550), ModelTiepoint (33922), GeoKeyDirectory (34735 = WGS84 EPSG:4326)
+            geo_keys = (1, 1, 0, 3, 1024, 0, 1, 2, 1025, 0, 1, 1, 2048, 0, 1, 4326)
+            extratags = [
+                (33550, 12, 3, (res_x, res_y, 0.0), True),
+                (33922, 12, 6, (0.0, 0.0, 0.0, min_lon, max_lat, 0.0), True),
+                (34735, 3, len(geo_keys), geo_keys, True),
+            ]
+            tif_buf = io.BytesIO()
+            tifffile.imwrite(
+                tif_buf,
+                export_stack,
+                photometric="rgb",
+                planarconfig="contig",
+                extratags=extratags,
+            )
 
             return Response(
-                content=tif_bytes,
+                content=tif_buf.getvalue(),
                 media_type="image/tiff",
                 headers={"Content-Disposition": f"attachment; filename=sih26142_{aoi_id}_sr_2.5m_raw_reflectance.tif"}
             )
         except Exception as e:
-            print(f"[Export Error] Failed to export GeoTIFF via GDAL: {e}")
+            print(f"[Export Error] Failed to export GeoTIFF via tifffile: {e}")
             raise HTTPException(status_code=500, detail=f"GeoTIFF export error: {e}")
 
     if item_type in ["infrastructure", "geojson"]:
@@ -1114,10 +1279,11 @@ async def download_result(item_type: str, format: str = "png"):
 # ==============================================================================
 
 class BlockchainRegisterRequest(BaseModel):
-    tile_id: str
+    model_config = ConfigDict(protected_namespaces=())
+    tile_id: str | None = None
     bbox: list[float] | None = None
-    model_name: str = "HAT"
-    scale_factor: int = 4
+    model_name: str | None = None
+    scale_factor: int | None = None
 
 
 @router.get("/blockchain/status")
@@ -1192,7 +1358,7 @@ async def verify_file_blockchain(file: UploadFile = File(...), tile_id: str = "p
 
 
 @router.post("/blockchain/register")
-async def register_tile_blockchain(req: BlockchainRegisterRequest):
+async def register_tile_blockchain(req: BlockchainRegisterRequest | None = None):
     """
     Explicitly registers or re-processes a tile version on Polygon Amoy.
     Automatically links previousHash to the preceding version and increments versionNumber.
@@ -1200,18 +1366,24 @@ async def register_tile_blockchain(req: BlockchainRegisterRequest):
     if current_session.get("sr") is None:
         raise HTTPException(status_code=400, detail="No super-resolved output available to register.")
 
-    bbox = req.bbox or current_session.get("metadata", {}).get("bbox", [75.34, 31.14, 75.38, 31.18])
+    req = req or BlockchainRegisterRequest()
+    meta = current_session.get("metadata") or {}
+    tile_id = req.tile_id or str(meta.get("aoi_id") or "sih_tile_001")
+    bbox = req.bbox or meta.get("bbox") or [75.34, 31.14, 75.38, 31.18]
+    model_name = req.model_name or sr_engine.model_name.upper()
+    scale_factor = req.scale_factor or sr_engine.scale_factor
     record = provenance_manager.register_tile(
-        tile_id=req.tile_id,
+        tile_id=tile_id,
         image_data=current_session["sr"],
         bbox=bbox,
-        model_name=req.model_name,
-        scale_factor=req.scale_factor
+        model_name=model_name,
+        scale_factor=scale_factor
     )
     current_session["blockchain_record"] = record
+    merged_record = {**record, **(_format_blockchain_ui(record) or {})}
     return {
         "status": "success",
-        "record": record
+        "record": merged_record
     }
 
 
@@ -1231,7 +1403,9 @@ async def get_visualization_modes():
                 "description": m["description"],
                 "bands_used": m["bands_used"],
                 "is_index": m["is_index"],
-                "legend": m["legend"]
+                "legend": m["legend"],
+                "legend_items": spectral_engine.build_legend_items(m),
+                "gradient_css": m.get("gradient_css"),
             }
             for m in spectral_engine.MODES.values()
         ],
@@ -1253,23 +1427,39 @@ async def switch_visualization(req: VisualizeRequest | None = None, mode: str | 
         active_mode = "true_color"
 
     if current_session.get("lr_raw") is None and current_session.get("lr") is None:
+        default_bbox = [75.30, 30.55, 75.36, 30.60]
         try:
-            default_bbox = [75.30, 30.55, 75.36, 30.60]
-            raw_np, meta = copernicus_client.fetch_sentinel2_tile(default_bbox, preset_id="punjab_agri")
-            current_session["lr_raw"] = raw_np
-            current_session["lr"] = raw_np[:, :, :3]
-            current_session["metadata"] = meta
+            raw_np, meta = copernicus_client.fetch_sentinel2_tile(
+                default_bbox,
+                time_window=("2024-03-01", "2024-05-30"),
+                preset_id="punjab_agri",
+                use_cache=True,
+            )
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"No satellite imagery loaded in current session: {e}")
+            cached = _find_cached_tile(bbox=default_bbox, aoi_id="punjab_agri")
+            if cached is None:
+                raise HTTPException(status_code=400, detail=f"No satellite imagery loaded in current session: {e}")
+            raw_np, meta = cached
+        meta.setdefault("bbox", default_bbox)
+        meta.setdefault("aoi_id", "punjab_agri")
+        with _session_lock:
+            current_session["lr_raw"] = raw_np
+            current_session["lr"] = raw_np[:, :, :3] if raw_np.ndim == 3 and raw_np.shape[2] >= 3 else raw_np
+            current_session["metadata"] = meta
 
     # Auto-generate SR array if not yet present so the SR half of spectral analysis is never blank
     if current_session.get("sr") is None and current_session.get("lr") is not None:
         try:
-            current_session["sr"] = sr_engine.predict(current_session["lr"], use_tiling=True)
+            current_session["sr"] = sr_engine.predict(
+                current_session["lr"],
+                use_tiling=True,
+                lr_raw=current_session.get("lr_raw"),
+            )
         except Exception as e:
             print(f"[switch_visualization] Auto-SR inference notice: {e}")
 
-    raw_bands = extract_bands_dict(current_session["lr_raw"])
+    lr_source = current_session.get("lr_raw") if current_session.get("lr_raw") is not None else current_session.get("lr")
+    raw_bands = extract_bands_dict(lr_source)
     lr_vis = spectral_engine.render(active_mode, raw_bands)
 
     sr_preview_b64 = None
@@ -1419,6 +1609,8 @@ async def switch_visualization(req: VisualizeRequest | None = None, mode: str | 
         "is_index": lr_vis["is_index"],
         "stats": sr_stats or lr_vis["stats"],
         "legend": lr_vis["legend"],
+        "legend_items": lr_vis["legend_items"],
+        "gradient_css": spectral_engine.MODES.get(active_mode, {}).get("gradient_css"),
         "coverage_stats": coverage_stats,
         "lr_preview": lr_preview_b64,
         "sr_preview": sr_preview_b64

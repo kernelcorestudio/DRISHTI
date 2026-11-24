@@ -21,17 +21,17 @@ import types
 
 
 def ensure_pickle_compatibility() -> None:
-    if "pathlib._local" in sys.modules:
-        return
-
-    shim = types.ModuleType("pathlib._local")
-    for name in dir(pathlib):
-        setattr(shim, name, getattr(pathlib, name))
+    shim = sys.modules.get("pathlib._local")
+    if shim is None:
+        shim = types.ModuleType("pathlib._local")
+        for name in dir(pathlib):
+            setattr(shim, name, getattr(pathlib, name))
+        sys.modules["pathlib._local"] = shim
 
     if sys.platform == "win32":
         # Paths stored by the Linux exporter are Posix ones; keep the values, change the class.
         shim.PosixPath = pathlib.WindowsPath
         shim.PurePosixPath = pathlib.PureWindowsPath
 
-    sys.modules["pathlib._local"] = shim
-    setattr(pathlib, "_local", shim)
+    if not hasattr(pathlib, "_local"):
+        setattr(pathlib, "_local", shim)

@@ -12,6 +12,12 @@
             <StatCard label="mode" :value="modeLabel" hint="real models loaded" />
         </div>
 
+        <v-alert v-if="app.serviceError"
+                 dense text type="error"
+                 class="block service-alert">
+            {{ app.serviceError }}
+        </v-alert>
+
         <SectionCard class="block"
                      title="run inference"
                      subtitle="stage-1 footprints + stage-2 damage -> geojson -> geoserv reload">
@@ -56,8 +62,8 @@
                     <span class="faint">intact footprints, severity "none"</span>
                 </div>
                 <div class="artefact">
-                    <span class="mono path">heatmap.json</span>
-                    <span class="faint">point list rendered by leaflet.heat</span>
+                    <span class="mono path">/geo/{zone}/structures-affected/heatmap</span>
+                    <span class="faint">point centroids indexed by GeoServ for leaflet.heat</span>
                 </div>
                 <div class="artefact">
                     <span class="mono path">before-after previews</span>
@@ -83,7 +89,7 @@ import StatCard from "@/ui/components/StatCard.vue";
 import UploadForm from "@/ui/components/UploadForm.vue";
 
 import { IJob } from "@/models";
-import { fetchJobs } from "@/modules/api";
+import { fetchDiagnostics, fetchHealth, fetchJobs } from "@/modules/api";
 
 @Component({
     components: {
@@ -154,9 +160,17 @@ export default class InferenceView extends Vue {
     }
 
     private async onCompleted(job: IJob) {
-        // Pull the job list straight away instead of waiting for the shell's 10 s poll.
+        // Pull jobs, diagnostics, and health immediately so KPIs and map zones stay in sync.
         try {
-            this.app.setJobs(await fetchJobs());
+            const [jobs, diagnostics, health] = await Promise.all([
+                fetchJobs(),
+                fetchDiagnostics(),
+                fetchHealth(),
+            ]);
+            this.app.setJobs(jobs);
+            this.app.setDiagnostics(diagnostics);
+            this.app.setHealth(health);
+            this.app.setServiceError(null);
             this.app.markSynced();
         } catch(error) {
             this.app.setServiceError(error instanceof Error ? error.message : String(error));

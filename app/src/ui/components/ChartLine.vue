@@ -22,7 +22,7 @@
                           fill="none" :stroke="color" stroke-width="2"
                           vector-effect="non-scaling-stroke" />
 
-                <circle v-for="(point, index) in plotted" :key="point.label"
+                <circle v-for="(point, index) in plotted" :key="`${index}-${point.label}`"
                         :cx="point.x" :cy="point.y" r="3.4"
                         :fill="isActive(index) ? color : 'var(--rahat-surface-2)'"
                         :stroke="color" stroke-width="1.6"
@@ -31,7 +31,7 @@
         </div>
 
         <div class="line-labels">
-            <div v-for="point in points" :key="point.label" class="line-label">
+            <div v-for="(point, index) in points" :key="`lbl-${index}-${point.label}`" class="line-label">
                 <span class="line-label-text">{{ point.label }}</span>
                 <span class="line-label-value">{{ format(point.value) }}</span>
             </div>

@@ -5,5 +5,7 @@
 
 export function publicUrl(...path: string[]): string {
     const fullPath = path.map(p => p.replace(/^\//, "").replace(/\/$/, "")).join("/");
-    return `${process.env.VUE_APP_ABSOLUTE_URL || ""}${fullPath}`;
+    const base = process.env.VUE_APP_ABSOLUTE_URL || process.env.BASE_URL || "/";
+    const normalizedBase = base.endsWith("/") ? base : `${base}/`;
+    return `${normalizedBase}${fullPath}`;
 }

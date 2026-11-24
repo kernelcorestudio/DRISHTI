@@ -113,7 +113,11 @@ class SpatialCoregister:
                 - aligned_sr: (H, W, C) float32 array coregistered to hr grid
                 - telemetry: dictionary containing detected shifts and method used
         """
-        H, W, C = sr.shape
+        if sr.shape[:2] != hr.shape[:2]:
+            interp = cv2.INTER_AREA if sr.shape[0] > hr.shape[0] else cv2.INTER_CUBIC
+            sr = cv2.resize(sr, (hr.shape[1], hr.shape[0]), interpolation=interp)
+        H, W = sr.shape[:2]
+        C = sr.shape[2] if sr.ndim == 3 else 1
         if bbox is None or len(bbox) != 4:
             bbox = [82.98, 25.28, 83.04, 25.33]
 
@@ -159,12 +163,15 @@ class SpatialCoregister:
 
                 # Apply genuine subpixel translation to each channel
                 aligned_sr = np.zeros_like(sr)
-                for c in range(C):
-                    aligned_sr[:, :, c] = shift(
-                        sr[:, :, c],
-                        shift=(shift_y, shift_x),
-                        mode="nearest"
-                    )
+                if sr.ndim == 2:
+                    aligned_sr = shift(sr, shift=(shift_y, shift_x), mode="nearest")
+                else:
+                    for c in range(C):
+                        aligned_sr[:, :, c] = shift(
+                            sr[:, :, c],
+                            shift=(shift_y, shift_x),
+                            mode="nearest"
+                        )
 
                 rel = round(float(1.0 - np.clip(error, 0.0, 1.0)) * 100.0, 1)
                 telemetry["method"] = "skimage.registration.phase_cross_correlation (Fourier Subpixel Shift)"

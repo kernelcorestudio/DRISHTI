@@ -118,8 +118,8 @@ class ProvenanceManager:
             from web3 import Web3
             from eth_account import Account
 
-            if self.rpc_url:
-                w3 = Web3(Web3.HTTPProvider(self.rpc_url))
+            if self.rpc_url and (self.contract_address or os.getenv("ENABLE_WEB3_RPC", "").lower() == "true"):
+                w3 = Web3(Web3.HTTPProvider(self.rpc_url, request_kwargs={"timeout": 3}))
                 if w3.is_connected():
                     self._web3 = w3
                     print(f"[NETRA-Blockchain] Connected to Polygon Amoy RPC: {self.rpc_url}")
@@ -183,6 +183,8 @@ class ProvenanceManager:
         image_hash = compute_sha256(image_data)
 
         # Parse Bounding Box: [min_lon, min_lat, max_lon, max_lat] or [west, south, east, north]
+        if not bbox or len(bbox) != 4:
+            bbox = [75.30, 30.55, 75.36, 30.60]
         min_lon, min_lat, max_lon, max_lat = float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])
         lat_center = (min_lat + max_lat) / 2.0
         lon_center = (min_lon + max_lon) / 2.0
@@ -241,7 +243,8 @@ class ProvenanceManager:
                 signed_tx = self._web3.eth.account.sign_transaction(tx, private_key=self.private_key)
                 raw_tx_bytes = getattr(signed_tx, "raw_transaction", None) or getattr(signed_tx, "rawTransaction", None)
                 tx_raw_hash = self._web3.eth.send_raw_transaction(raw_tx_bytes)
-                tx_hash = "0x" + tx_raw_hash.hex()
+                raw_hex = tx_raw_hash.hex()
+                tx_hash = raw_hex if raw_hex.startswith("0x") else ("0x" + raw_hex)
                 mode = "polygon_amoy"
                 print(f"[NETRA-Blockchain] On-chain tx sent to Polygon Amoy: {tx_hash}")
             except Exception as e:

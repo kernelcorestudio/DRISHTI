@@ -16,9 +16,9 @@
                     <v-list-item v-for="item in navItems"
                                  :key="item.route"
                                  :to="item.route"
-                                 exact
+                                 :exact="item.route !== '/map'"
                                  class="nav-item"
-                                 :class="{ 'nav-item--active': item.route === $route.path }">
+                                 :class="{ 'nav-item--active': isNavActive(item.route) }">
                         <v-list-item-icon class="nav-icon">
                             <v-icon small>{{ item.icon }}</v-icon>
                         </v-list-item-icon>
@@ -201,6 +201,13 @@ export default class App extends Vue {
         return this.app.selectedDisasterZone?.id || null;
     }
 
+    private isNavActive(route: string): boolean {
+        if(route === "/map") {
+            return this.$route.path === "/map" || this.$route.path.startsWith("/map/");
+        }
+        return this.$route.path === route;
+    }
+
     private get apiState(): string {
         const status = this.app.health?.status;
         return status ? status : "offline";
@@ -306,8 +313,12 @@ export default class App extends Vue {
         ]);
 
         this.app.setHealth(health.status === "fulfilled" ? health.value : null);
-        this.app.setDiagnostics(diagnostics.status === "fulfilled" ? diagnostics.value : null);
-        this.app.setJobs(jobs.status === "fulfilled" ? jobs.value : []);
+        if(diagnostics.status === "fulfilled") {
+            this.app.setDiagnostics(diagnostics.value);
+        }
+        if(jobs.status === "fulfilled") {
+            this.app.setJobs(jobs.value);
+        }
 
         const failure = [health, diagnostics, jobs].find(result => result.status === "rejected");
         this.app.setServiceError(failure && failure.status === "rejected"

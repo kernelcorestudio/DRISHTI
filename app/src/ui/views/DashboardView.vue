@@ -877,7 +877,7 @@ export default class DashboardView extends Vue {
         const top = this.chartScale.top;
 
         return series.map((point, index) => ({
-            x: (index / (series.length - 1)) * 100,
+            x: series.length === 1 ? 50 : (index / (series.length - 1)) * 100,
             y: 92 - (point.value / top) * 76,
         }));
     }
@@ -3136,6 +3136,11 @@ html.light .pipeline-hint {
     .stage::before {
         animation: none;
     }
+
+    .stage:hover,
+    .stage--on {
+        transform: none;
+    }
 }
 
 /* ---- motion ------------------------------------------------------------------ */
@@ -3180,29 +3185,6 @@ html.light .pipeline-hint {
     from {
         opacity: 0;
         transform: translateY(3px);
-    }
-}
-
-@media (max-width: 1280px) {
-    .stages {
-        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .live-dot,
-    .term-line,
-    .term-caret--typing,
-    .bar,
-    .stage-detail {
-        animation: none;
-    }
-
-    .bar:hover,
-    .bar--hot,
-    .stage:hover,
-    .stage--on {
-        transform: none;
     }
 }
 

@@ -155,11 +155,17 @@ async function fetchGeoJSON(endpointUrl: string, bounds: [ILatLng, ILatLng], lim
     url.searchParams.append("limit", limit.toString());
 
     const response = await fetch(url.toString());
+    if(!response.ok) {
+        return [];
+    }
     return await response.json();
 }
 
 async function fetchHeatmap(endpointUrl: string) {
     const response = await fetch(endpointUrl);
+    if(!response.ok) {
+        return [];
+    }
     return await response.json();
 }
 
@@ -194,6 +200,7 @@ const SUPPORTED_AMENITIES = [
     "school",
     "shelter",
     "townhall",
+    "train_station",
     "university",
 ];
 
@@ -342,7 +349,7 @@ export default class MapView extends Vue {
                 params: {
                     options,
                 },
-            }).catch();
+            }).catch(() => undefined);
         }
     }
 
@@ -576,9 +583,14 @@ export default class MapView extends Vue {
         ];
     }
 
+    private hasInitializedRouteView = false;
+
     @Watch("app.selectedDisasterZone", {immediate: true})
     private async onDisasterZoneSelected(disasterZone: IDisasterZone | null) {
         await this.$nextTick();
+        if(!this.map) {
+            return;
+        }
 
         this.beforeLayer?.remove();
         this.afterLayer?.remove();
@@ -593,24 +605,32 @@ export default class MapView extends Vue {
         if(disasterZone.beforeLayer) {
             this.beforeLayer = L.tileLayer(disasterZone.beforeLayer.urlTemplate, {
                 attribution: disasterZone.beforeLayer.attributionHtml,
+                maxZoom: 19,
+                maxNativeZoom: 19,
             });
         }
 
         if(disasterZone.afterLayer) {
             this.afterLayer = L.tileLayer(disasterZone.afterLayer.urlTemplate, {
                 attribution: disasterZone.afterLayer.attributionHtml,
+                maxZoom: 19,
+                maxNativeZoom: 19,
             });
         }
 
         this.updateHeatmap().then();
         this.onVisibleLayerChanged();
 
-        this.setView({
-            center: disasterZone.center,
-            // Demo tiles only exist for z15-z19, so the zone's own zoom is what shows imagery.
-            zoom: disasterZone.center.zoom,
-            fly: true,
-        });
+        const preserveDeepLink = !this.hasInitializedRouteView && Boolean(this.$route.params.options);
+        this.hasInitializedRouteView = true;
+        if(!preserveDeepLink) {
+            this.setView({
+                center: disasterZone.center,
+                // Demo tiles exist up to z19, so the zone's own zoom is what shows imagery.
+                zoom: disasterZone.center.zoom,
+                fly: true,
+            });
+        }
     }
 
     @Watch("visibleLayer", {immediate: true})
@@ -626,13 +646,14 @@ export default class MapView extends Vue {
     }
 
     beforeRouteUpdate(to: Route, from: Route, next: NavigationGuardNext): void {
-        next(vm => (vm as MapView).navigateToRouteView());
+        next();
+        this.$nextTick(() => this.navigateToRouteView());
     }
 
     async mounted(): Promise<void> {
         this.map = L.map(this.mapRef, {
             minZoom: 2,
-            maxZoom: 18,
+            maxZoom: 19,
             maxBounds: [
                 [-90, -180],
                 [90, 180],

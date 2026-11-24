@@ -72,7 +72,7 @@ class Job:
             "unaffected_structures": self.unaffected,
             "severe_structures": self.severe,
             "moderate_structures": self.moderate,
-            "artifacts": self.artifacts,
+            "artifacts": list(self.artifacts),
             "error": self.error,
             "warning": self.warning,
         }
@@ -118,18 +118,36 @@ class JobQueue:
             name=f"inference-{job.id[:8]}",
             daemon=True,
         )
-        thread.start()
+        try:
+            thread.start()
+        except Exception:
+            with self._lock:
+                self._jobs.pop(job.id, None)
+            raise
         return job
 
     def get(self, job_id: str) -> Optional[Job]:
         with self._lock:
             return self._jobs.get(job_id)
 
+    def snapshot(self, job_id: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            return job.to_dict() if job is not None else None
+
     def list(self, limit: int = 20) -> List[Job]:
+        limit = max(0, int(limit))
         with self._lock:
             jobs = list(self._jobs.values())
         jobs.reverse()  # newest first, dicts keep insertion order
         return jobs[:limit]
+
+    def list_snapshots(self, limit: int = 20) -> List[Dict[str, Any]]:
+        limit = max(0, int(limit))
+        with self._lock:
+            jobs = list(self._jobs.values())
+            jobs.reverse()
+            return [job.to_dict() for job in jobs[:limit]]
 
     def active_count(self) -> int:
         with self._lock:

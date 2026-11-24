@@ -30,19 +30,21 @@ def download_file(download_loc: Path, download_link: str, tar_name: str) -> None
 
     file_name = download_loc / tar_name
     if not file_name.exists():
-        # credit to https://gist.github.com/devhero/8ae2229d9ea1a59003ced4587c9cb236 for this one
-        # The original way I was going about this was dumb
-        # thanks bhuiyanmobasshir94
+        if not download_link or download_link == "REDACTED":
+            raise ValueError(
+                "Set download_link (or place the xBD archive directly at download/train_images_labels_targets.tar) before running."
+            )
         print("Downloading data. This will take a while (17GB)")
         with open(file_name, 'wb') as fp:
-            response = requests.get(download_link, stream=True)
-            for chunk in response.raw.stream(1024, decode_content=False):
+            response = requests.get(download_link, stream=True, timeout=60)
+            response.raise_for_status()
+            for chunk in response.iter_content(chunk_size=1024 * 64):
                 if chunk:
                     fp.write(chunk)
-                    fp.flush()
     print(file_name)
 
-    tarfile.open(file_name).extractall()
+    with tarfile.open(file_name) as tf:
+        tf.extractall(path=download_loc)
 
 
 def run_rust_feature_extractor(data_dir: Path, imsize: int):

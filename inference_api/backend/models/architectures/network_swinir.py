@@ -802,7 +802,7 @@ class SwinIR(nn.Module):
 
         return x
 
-    def forward(self, x):
+    def forward(self, x, force_dropout: bool = False):
         H, W = x.shape[2:]
         x = self.check_image_size(x)
         
@@ -812,18 +812,27 @@ class SwinIR(nn.Module):
         if self.upsampler == 'pixelshuffle':
             # for classical SR
             x = self.conv_first(x)
-            x = self.conv_after_body(self.forward_features(x)) + x
+            feat = self.conv_after_body(self.forward_features(x))
+            if force_dropout:
+                feat = F.dropout2d(feat, p=0.05, training=True)
+            x = feat + x
             x = self.conv_before_upsample(x)
             x = self.conv_last(self.upsample(x))
         elif self.upsampler == 'pixelshuffledirect':
             # for lightweight SR
             x = self.conv_first(x)
-            x = self.conv_after_body(self.forward_features(x)) + x
+            feat = self.conv_after_body(self.forward_features(x))
+            if force_dropout:
+                feat = F.dropout2d(feat, p=0.05, training=True)
+            x = feat + x
             x = self.upsample(x)
         elif self.upsampler == 'nearest+conv':
             # for real-world SR
             x = self.conv_first(x)
-            x = self.conv_after_body(self.forward_features(x)) + x
+            feat = self.conv_after_body(self.forward_features(x))
+            if force_dropout:
+                feat = F.dropout2d(feat, p=0.05, training=True)
+            x = feat + x
             x = self.conv_before_upsample(x)
             x = self.lrelu(self.conv_up1(torch.nn.functional.interpolate(x, scale_factor=2, mode='nearest')))
             if self.upscale == 4:
@@ -833,6 +842,8 @@ class SwinIR(nn.Module):
             # for image denoising and JPEG compression artifact reduction
             x_first = self.conv_first(x)
             res = self.conv_after_body(self.forward_features(x_first)) + x_first
+            if force_dropout:
+                res = F.dropout2d(res, p=0.05, training=True)
             x = x + self.conv_last(res)
 
         x = x / self.img_range + self.mean

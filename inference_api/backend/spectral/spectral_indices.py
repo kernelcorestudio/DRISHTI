@@ -54,6 +54,8 @@ def convert_bands_to_display_rgb(data: np.ndarray | dict) -> np.ndarray:
         nir = data.get("B08", data.get("nir", None))
         if red is None or green is None or blue is None:
             vals = list(data.values())
+            if len(vals) < 3:
+                raise ValueError(f"Band dict must contain at least 3 channels, got keys {list(data.keys())}")
             red, green, blue = vals[0], vals[1], vals[2]
         rgb = np.stack([
             np.asarray(red, dtype=np.float32),
@@ -70,8 +72,15 @@ def convert_bands_to_display_rgb(data: np.ndarray | dict) -> np.ndarray:
             nir = data[..., 3].astype(np.float32)
         elif data.shape[-1] >= 3:
             rgb = data[..., :3].astype(np.float32)
+        elif data.shape[-1] == 2:
+            c0 = data[..., 0].astype(np.float32)
+            c1 = data[..., 1].astype(np.float32)
+            rgb = np.stack([c0, c1, c1], axis=-1)
+        elif data.shape[-1] == 1:
+            c0 = data[..., 0].astype(np.float32)
+            rgb = np.stack([c0, c0, c0], axis=-1)
         else:
-            rgb = data.astype(np.float32)
+            raise ValueError(f"Unsupported channel count for display conversion: {data.shape}")
     else:
         raise ValueError(f"Unsupported data type for display conversion: {type(data)}")
 
@@ -285,13 +294,17 @@ class SpectralIndexEngine:
         """
         Computes the 2D floating-point index array using spyndex with fallback.
         """
-        nir = bands["B08"].astype(np.float32)
-        red = bands["B04"].astype(np.float32)
-        green = bands["B03"].astype(np.float32)
-        blue = bands["B02"].astype(np.float32)
-        swir1 = bands.get("B11", np.clip(0.65 * red + 0.35 * nir, 0.0, 1.0)).astype(np.float32)
-        swir2 = bands.get("B12", np.clip(0.80 * red + 0.20 * nir, 0.0, 1.0)).astype(np.float32)
+        if not bands:
+            raise ValueError("Cannot compute spectral index from empty band mapping")
+        fallback_band = np.asarray(next(iter(bands.values())), dtype=np.float32)
+        red = np.asarray(bands.get("B04", bands.get("red", fallback_band)), dtype=np.float32)
+        green = np.asarray(bands.get("B03", bands.get("green", red)), dtype=np.float32)
+        blue = np.asarray(bands.get("B02", bands.get("blue", red)), dtype=np.float32)
+        nir = np.asarray(bands.get("B08", bands.get("nir", red)), dtype=np.float32)
+        swir1 = np.asarray(bands.get("B11", np.clip(0.65 * red + 0.35 * nir, 0.0, 1.0)), dtype=np.float32)
+        swir2 = np.asarray(bands.get("B12", np.clip(0.80 * red + 0.20 * nir, 0.0, 1.0)), dtype=np.float32)
 
+        mode_lower = mode.lower()
         mode_upper = mode.upper()
         # Parameter dict standardized for spyndex
         spyndex_params = {
@@ -305,26 +318,26 @@ class SpectralIndexEngine:
 
         if spyndex is not None:
             try:
-                val = spyndex.computeIndex(mode_upper, spyndex_params)
+                val = spyndex.computeIndex(index=mode_upper, params=spyndex_params)
                 val = np.asarray(val, dtype=np.float32)
                 # Replace NaNs or Infs
-                val = np.nan_to_num(val, nan=0.0, posinf=1.0, neginf=-1.0)
-                return val
+                return np.nan_to_num(val, nan=0.0, posinf=1.0, neginf=-1.0).astype(np.float32)
             except Exception:
                 pass
-            # High-precision mathematical fallback
-            eps = 1e-6
-            if mode == "ndvi":
-                val = (nir - red) / (nir + red + eps)
-            elif mode == "ndwi":
-                val = (green - nir) / (green + nir + eps)
-            elif mode == "ndbi":
-                val = (swir1 - nir) / (swir1 + nir + eps)
-            elif mode == "nbr":
-                val = (nir - swir2) / (nir + swir2 + eps)
-            else:
-                val = (nir - red) / (nir + red + eps)
-            return np.nan_to_num(val, nan=0.0, posinf=1.0, neginf=-1.0).astype(np.float32)
+
+        # High-precision mathematical fallback
+        eps = 1e-6
+        if mode_lower == "ndvi":
+            val = (nir - red) / (nir + red + eps)
+        elif mode_lower == "ndwi":
+            val = (green - nir) / (green + nir + eps)
+        elif mode_lower == "ndbi":
+            val = (swir1 - nir) / (swir1 + nir + eps)
+        elif mode_lower == "nbr":
+            val = (nir - swir2) / (nir + swir2 + eps)
+        else:
+            val = (nir - red) / (nir + red + eps)
+        return np.nan_to_num(val, nan=0.0, posinf=1.0, neginf=-1.0).astype(np.float32)
 
     def apply_colormap(self, index_arr: np.ndarray, mode: str) -> np.ndarray:
         """
@@ -425,8 +438,34 @@ class SpectralIndexEngine:
             "rgb_uint8": rgb_uint8,
             "base64_png": base64_png,
             "stats": stats,
-            "legend": cfg["legend"]
+            "legend": cfg["legend"],
+            "legend_items": self.build_legend_items(cfg)
         }
+
+    @staticmethod
+    def build_legend_items(cfg: dict[str, Any]) -> list[dict[str, str]]:
+        """Normalizes chip and continuous legend specs into uniform UI legend rows."""
+        legend = cfg.get("legend") or {}
+        if legend.get("type") == "chips":
+            return [
+                {
+                    "label": str(chip.get("label", "")),
+                    "color": str(chip.get("color", "#888888")),
+                    "threshold": cfg.get("subtitle", "Composite"),
+                }
+                for chip in legend.get("chips", [])
+            ]
+        if legend.get("type") == "continuous":
+            colors = cfg.get("colors", ["#5c3a21", "#d9f0a3", "#005a32"])
+            vmin = legend.get("min", cfg.get("vmin", -1.0))
+            vmax = legend.get("max", cfg.get("vmax", 1.0))
+            mid = round((float(vmin) + float(vmax)) / 2.0, 2)
+            return [
+                {"label": str(legend.get("min_label", "Low")), "color": colors[0], "threshold": f"~ {vmin}"},
+                {"label": str(legend.get("mid_label", "Moderate")), "color": colors[len(colors) // 2], "threshold": f"~ {mid}"},
+                {"label": str(legend.get("max_label", "High")), "color": colors[-1], "threshold": f"~ {vmax}"},
+            ]
+        return []
 
 # Singleton instance
 spectral_engine = SpectralIndexEngine()

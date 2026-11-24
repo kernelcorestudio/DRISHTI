@@ -102,18 +102,26 @@ fn process_feature(
     let right = bbox.max().x.min(image_width as f64) as u32;
     let top = bbox.min().y.max(0f64) as u32;
     let bottom = bbox.max().y.min(image_height as f64) as u32;
+    if right <= left || bottom <= top {
+        return Err(anyhow::Error::msg("Feature bbox lies outside image bounds"));
+    }
 
-    let mut feature_image: RgbImage =
-        ImageBuffer::new(bbox.width().ceil() as u32, bbox.height().ceil() as u32);
+    let buf_width = (right - left).max(1);
+    let buf_height = (bottom - top).max(1);
+    let mut feature_image: RgbImage = ImageBuffer::new(buf_width, buf_height);
 
-    for x in left..right as u32 {
+    for x in left..right {
         for y in top..bottom {
-            if polygon.intersects(&geo::Point::from((x as f64, y as f64))) {
-                feature_image.draw_pixel(
-                    x - left,
-                    y - top,
-                    Canvas::get_pixel(source_image, x, y).to_rgb(),
-                );
+            if polygon.intersects(&geo::Point::from((x as f64 + 0.5, y as f64 + 0.5))) {
+                let ix = x - left;
+                let iy = y - top;
+                if ix < feature_image.width() && iy < feature_image.height() {
+                    feature_image.draw_pixel(
+                        ix,
+                        iy,
+                        Canvas::get_pixel(source_image, x, y).to_rgb(),
+                    );
+                }
             }
         }
     }
@@ -123,15 +131,17 @@ fn process_feature(
     let aspect_ratio = feature_image_width / feature_image_height;
 
     let (scaled_width, scaled_height) = if aspect_ratio >= 1.0 {
-        (output_size as f64 / aspect_ratio, output_size as f64)
+        (output_size as f64, output_size as f64 / aspect_ratio)
     } else {
-        (output_size as f64, output_size as f64 * aspect_ratio)
+        (output_size as f64 * aspect_ratio, output_size as f64)
     };
+    let scaled_w_u32 = (scaled_width.round() as u32).clamp(1, output_size);
+    let scaled_h_u32 = (scaled_height.round() as u32).clamp(1, output_size);
 
     let scaled_feature_image = imageops::resize(
         &feature_image,
-        scaled_width as u32,
-        scaled_height as u32,
+        scaled_w_u32,
+        scaled_h_u32,
         imageops::FilterType::Gaussian,
     );
 
@@ -140,8 +150,8 @@ fn process_feature(
     imageops::overlay(
         &mut output_image,
         &scaled_feature_image,
-        (output_size - scaled_width as u32) / 2,
-        (output_size - scaled_height as u32) / 2,
+        (output_size - scaled_w_u32) / 2,
+        (output_size - scaled_h_u32) / 2,
     );
 
     output_image.save(output_path)?;
@@ -170,7 +180,7 @@ fn extract_features_from_file(args: &Args, path: &PathBuf) -> anyhow::Result<()>
 
         log::debug!(
             "Thread #{} is processing {}:{}",
-            rayon::current_thread_index().unwrap(),
+            rayon::current_thread_index().unwrap_or(0),
             label_file_name,
             feature.properties.uid,
         );
@@ -194,21 +204,26 @@ fn main() -> anyhow::Result<()> {
     );
 
     let args: Args = argh::from_env();
+    std::fs::create_dir_all(&args.output_dir)?;
     let label_files = std::fs::read_dir(args.labels_dir.clone())?
         .into_iter()
         .filter_map(|f| match f {
-            Ok(f) => Some(f),
+            Ok(f) if f.path().is_file() => Some(f),
+            Ok(_) => None,
             _ => {
                 log::error!("Could not read directory entry");
                 None
             }
         })
-        .filter(|f| match f.file_name().to_str() {
-            Some(file_name) => file_name.starts_with(&args.labels_prefix),
-            _ => {
-                log::error!("Cannot parse file name {:?}", f.file_name());
-                false
-            }
+        .filter(|f| {
+            f.path().extension().and_then(|s| s.to_str()) == Some("json")
+                && match f.file_name().to_str() {
+                    Some(file_name) => file_name.starts_with(&args.labels_prefix),
+                    _ => {
+                        log::error!("Cannot parse file name {:?}", f.file_name());
+                        false
+                    }
+                }
         })
         .map(|f| f.path())
         .collect::<Vec<_>>();

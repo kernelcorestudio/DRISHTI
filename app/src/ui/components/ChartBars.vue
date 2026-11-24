@@ -5,7 +5,7 @@
 
 <template>
     <div class="bars">
-        <div v-for="item in items" :key="item.label" class="bar-row">
+        <div v-for="(item, index) in items" :key="`${index}-${item.label}`" class="bar-row">
             <div class="bar-label" :title="item.label">{{ item.label }}</div>
 
             <div class="bar-track">

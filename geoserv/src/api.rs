@@ -87,20 +87,37 @@ pub async fn get_zones_route(
     Ok(HttpResponse::Ok().json(&*config))
 }
 
+pub async fn health_route(state: web::Data<SharedState>) -> ActixResult<impl Responder> {
+    let index_count = state.geo_indexes.read().unwrap().len();
+    let zones_count = state
+        .zones_config
+        .read()
+        .unwrap()
+        .as_array()
+        .map(|arr| arr.len())
+        .unwrap_or(0);
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "status": "ok",
+        "layers": index_count,
+        "zones": zones_count,
+    })))
+}
+
 pub async fn reload_zones_route(
     state: web::Data<SharedState>,
 ) -> ActixResult<impl Responder> {
-    // Reload logic to be called from main or we can implement it here.
-    // For simplicity, we just reload the config file here.
-    let config_data = std::fs::read_to_string(&state.zones_config_path)
-        .map_err(|_| actix_web::error::ErrorInternalServerError("Failed to read config"))?;
-    let config: serde_json::Value = serde_json::from_str(&config_data)
-        .map_err(|_| actix_web::error::ErrorInternalServerError("Failed to parse config"))?;
-    
-    *state.zones_config.write().unwrap() = config;
-    
-    // Re-read the zones file and rebuild the geospatial indexes from disk.
-    crate::geodata::reload_geo_indexes(&state).map_err(|_| actix_web::error::ErrorInternalServerError("Failed to reload indexes"))?;
-    
-    Ok(HttpResponse::Ok().json(serde_json::json!({"status": "reloaded"})))
+    if std::path::Path::new(&state.zones_config_path).exists() {
+        let config_data = std::fs::read_to_string(&state.zones_config_path)
+            .map_err(|e| actix_web::error::ErrorInternalServerError(format!("Failed to read config: {}", e)))?;
+        let config: serde_json::Value = serde_json::from_str(&config_data)
+            .map_err(|e| actix_web::error::ErrorInternalServerError(format!("Failed to parse config: {}", e)))?;
+        *state.zones_config.write().unwrap() = config;
+    }
+
+    // Re-read geospatial indexes from disk into a fresh map before swapping.
+    crate::geodata::reload_geo_indexes(&state)
+        .map_err(|e| actix_web::error::ErrorInternalServerError(format!("Failed to reload indexes: {}", e)))?;
+
+    let index_count = state.geo_indexes.read().unwrap().len();
+    Ok(HttpResponse::Ok().json(serde_json::json!({"status": "reloaded", "layers": index_count})))
 }

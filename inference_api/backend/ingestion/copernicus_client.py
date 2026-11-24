@@ -289,8 +289,19 @@ function evaluatePixel(sample) {
                         "is_live_satellite_stream": True
                     }
 
-                    # Keep in memory only, no disk dumping to saved_tiles/
+                    # Persist to disk cache when caching is enabled
+                    if use_cache:
+                        try:
+                            np.save(cache_path, arr)
+                            with open(meta_path, "w", encoding="utf-8") as mf:
+                                json.dump(meta, mf, indent=2)
+                        except Exception as cache_err:
+                            print(f"[CopernicusClient] Cache write warning: {cache_err}")
                     break
+                else:
+                    raise RuntimeError(
+                        f"CDSE Process API returned HTTP {resp.status_code}: {resp.text[:250]}"
+                    )
             except Exception as e:
                 print(f"[CopernicusClient] Live fetch attempt {attempt} failed: {e}")
                 if attempt == retries:
@@ -348,8 +359,9 @@ function evaluatePixel(sample) {
         via temporal median. Eliminates transient cloud puffs, atmospheric haze, and boosts SNR (+0.08 to +0.68 dB PSNR).
         """
         cache_key = hashlib.md5(f"multi-{bbox_coords}-{time_window}".encode()).hexdigest()
-        cache_path = CACHE_DIR / f"{preset_id or cache_key}_multitemporal_fused.npy"
-        meta_path = CACHE_DIR / f"{preset_id or cache_key}_multitemporal_fused.json"
+        cache_stem = preset_id if (preset_id and preset_id != "custom_aoi") else cache_key
+        cache_path = CACHE_DIR / f"{cache_stem}_multitemporal_fused.npy"
+        meta_path = CACHE_DIR / f"{cache_stem}_multitemporal_fused.json"
 
         if cache_path.exists() and meta_path.exists():
             arr = np.load(cache_path)
@@ -466,6 +478,8 @@ function evaluatePixel(sample) {
             'B06' (RedEdge 2), 'B07' (RedEdge 3), 'B08' (NIR broad),
             'B8A' (NIR narrow), 'B11' (SWIR 1), 'B12' (SWIR 2)
         """
+        if arr is None:
+            raise ValueError("extract_bands_dict received None instead of an image array")
         arr = np.asarray(arr, dtype=np.float32)
         if arr.ndim == 2:
             arr = np.expand_dims(arr, axis=-1)

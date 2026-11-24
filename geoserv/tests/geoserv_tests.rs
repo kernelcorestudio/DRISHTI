@@ -262,5 +262,37 @@ async fn http_routes_viewport_heatmap_and_reload_work() {
     let zone2_features: Vec<serde_json::Value> = actix_test::call_and_read_body_json(&app, zone2_req).await;
     assert_eq!(zone2_features.len(), 1);
 
+    // 6. Reload must still succeed even if zones_config_path does not exist on disk.
+    fs::remove_file(&zones_config_path).unwrap();
+    let reload_no_cfg = actix_test::TestRequest::post().uri("/disasters/reload").to_request();
+    let reload_no_cfg_body: serde_json::Value =
+        actix_test::call_and_read_body_json(&app, reload_no_cfg).await;
+    assert_eq!(reload_no_cfg_body["status"], "reloaded");
+
+    fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn kdbush_empty_create_and_null_geometry_do_not_panic() {
+    let empty = KDBush::create(Vec::<(f64, f64)>::new(), 0);
+    assert!(empty.is_empty());
+
+    let root = make_temp_dir("edge");
+    let null_geom = root.join("null_geom.geojson");
+    fs::write(
+        &null_geom,
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":null}]}"#,
+    )
+    .unwrap();
+    assert!(GeoIndexBuilder::new().add_features_from_file(&null_geom).is_err());
+
+    let short_pt = root.join("short_point.geojson");
+    fs::write(
+        &short_pt,
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":{"type":"Point","coordinates":[12.3]}}]}"#,
+    )
+    .unwrap();
+    assert!(GeoIndexBuilder::new().add_features_from_file(&short_pt).is_err());
+
     fs::remove_dir_all(&root).unwrap();
 }

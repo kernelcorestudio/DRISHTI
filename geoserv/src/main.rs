@@ -3,6 +3,7 @@
  * Copyright (c) 2022 SilentByte <https://silentbyte.com/>
  */
 
+use std::path::Path;
 use std::sync::{Arc, RwLock};
 
 use actix_cors::Cors;
@@ -27,7 +28,7 @@ struct Args {
     #[argh(option, default = r#""127.0.0.1".into()"#)]
     hostname: String,
 
-    /// the images directory of the XView2 training data.
+    /// the port on which the server will listen.
     #[argh(option, default = "8088")]
     port: u16,
 
@@ -35,9 +36,30 @@ struct Args {
     #[argh(option)]
     data_dir: String,
 
+    /// optional path to disaster-zones.json configuration.
+    #[argh(option)]
+    zones_config: Option<String>,
+
     /// the number of worker threads to use.
     #[argh(option, default = "4")]
     workers: usize,
+}
+
+fn resolve_zones_config_path(data_dir: &str, explicit: Option<String>) -> String {
+    if let Some(path) = explicit {
+        return path;
+    }
+    let cwd_cfg = Path::new("disaster-zones.json");
+    if cwd_cfg.exists() {
+        return cwd_cfg.to_string_lossy().into_owned();
+    }
+    if let Some(parent) = Path::new(data_dir).parent() {
+        let sibling = parent.join("disaster-zones.json");
+        if sibling.exists() {
+            return sibling.to_string_lossy().into_owned();
+        }
+    }
+    cwd_cfg.to_string_lossy().into_owned()
 }
 
 #[actix_web::main]
@@ -56,7 +78,7 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let geo_indexes = build_geo_indexes_from_directory_structure(&args.data_dir)?;
-    let config_path = "disaster-zones.json".to_string();
+    let config_path = resolve_zones_config_path(&args.data_dir, args.zones_config);
     let config_data = std::fs::read_to_string(&config_path)
         .unwrap_or_else(|_| "[]".to_string());
     let zones_config: serde_json::Value = serde_json::from_str(&config_data)?;
@@ -78,9 +100,10 @@ async fn main() -> anyhow::Result<()> {
     HttpServer::new(move || {
         App::new()
             .wrap(Logger::default())
-            .wrap(Cors::default().allow_any_origin())
+            .wrap(Cors::permissive())
             .wrap(Compress::default())
             .app_data(web::Data::new(state.clone()))
+            .service(web::resource("/health").route(web::get().to(api::health_route)))
             .service(web::resource("/geo/{group}/{name}").route(web::get().to(api::geo_route)))
             .service(
                 web::resource("/geo/{group}/{name}/heatmap")

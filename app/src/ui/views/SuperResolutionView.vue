@@ -90,6 +90,14 @@
                     </v-col>
                 </v-row>
 
+                <v-alert v-if="srError"
+                         dense text type="error"
+                         dismissible
+                         class="mt-3 mb-0"
+                         @input="srError = null">
+                    {{ srError }}
+                </v-alert>
+
                 <v-alert v-if="cloudWarning"
                          dense text type="warning"
                          class="mt-3 mb-0 sr-alert">
@@ -151,24 +159,93 @@
                         </div>
                     </div>
 
-                    <!-- Tab 1: Side by Side -->
+                    <!-- Tab 1: Synchronized 3-Panel View -->
                     <div v-if="activeTab === 1">
-                        <div v-if="hasLR" class="sr-side-by-side">
-                            <div class="sr-side-card">
-                                <div class="sr-card-title">Sentinel-2 (10m Input)</div>
-                                <div class="sr-img-wrapper sr-img-wrapper--pixelated">
-                                    <img :src="lrImage" alt="10m Input" />
+                        <div v-if="hasLR">
+                            <!-- Viewport Sync & Zoom Toolbar -->
+                            <div class="sr-sync-toolbar d-flex align-center justify-space-between mb-3">
+                                <div class="d-flex align-center">
+                                    <v-icon small color="accent" class="mr-2">mdi-sync</v-icon>
+                                    <span class="text-caption font-weight-bold">Synchronized 3-Panel Inspection Viewport</span>
+                                    <span class="chip chip--ok ml-3" style="font-size: 10px;">Sync Active</span>
                                 </div>
-                                <div class="sr-meta">Resolution: 10m/px • Bands: B04, B03, B02, B08</div>
+                                <div class="d-flex align-center">
+                                    <span class="faint text-caption mr-2">Zoom:</span>
+                                    <v-btn icon small class="mr-1" title="Zoom In (+)" @click="zoomIn">
+                                        <v-icon small>mdi-plus</v-icon>
+                                    </v-btn>
+                                    <v-btn icon small class="mr-1" title="Zoom Out (-)" @click="zoomOut">
+                                        <v-icon small>mdi-minus</v-icon>
+                                    </v-btn>
+                                    <v-btn text x-small color="accent" class="mr-2" title="Reset Zoom" @click="resetZoom">
+                                        Fit
+                                    </v-btn>
+                                    <span class="mono font-weight-bold text-caption" style="min-width: 42px;">{{ syncZoom.toFixed(1) }}x</span>
+                                </div>
                             </div>
 
-                            <div class="sr-side-card">
-                                <div class="sr-card-title">Super-Resolved (2.5m Output)</div>
-                                <div class="sr-img-wrapper">
-                                    <img v-if="hasSR" :src="srImage" alt="2.5m SR" />
-                                    <div v-else class="empty py-12">Pending inference</div>
+                            <div class="sr-side-by-side sr-side-by-side--3col"
+                                 @mousedown="onSyncMouseDown"
+                                 @mousemove="onSyncMouseMove"
+                                 @mouseup="onSyncMouseUp"
+                                 @mouseleave="onSyncMouseUp"
+                                 @wheel.prevent="onSyncWheel">
+                                <!-- Panel 1: Input Sentinel-2 -->
+                                <div class="sr-side-card">
+                                    <div class="sr-card-title d-flex justify-space-between align-center">
+                                        <span>Input: Sentinel-2 L2A (10m)</span>
+                                        <span class="chip chip--neutral" style="font-size: 10px;">Input</span>
+                                    </div>
+                                    <div class="sr-img-wrapper sr-img-wrapper--pixelated sr-img-wrapper--sync"
+                                         :style="{ cursor: syncZoom > 1.05 ? (isSyncPanning ? 'grabbing' : 'grab') : 'default' }">
+                                        <img :src="lrImage"
+                                             alt="Sentinel-2 10m Input"
+                                             :style="syncTransformStyle"
+                                             draggable="false" />
+                                    </div>
+                                    <div class="sr-meta">Resolution: 10m/px • Bands: B04, B03, B02, B08</div>
                                 </div>
-                                <div class="sr-meta">Resolution: 2.5m/px • Model: {{ selectedModel.toUpperCase() }}</div>
+
+                                <!-- Panel 2: Super-Resolved (2.5m) -->
+                                <div class="sr-side-card">
+                                    <div class="sr-card-title d-flex justify-space-between align-center">
+                                        <span>Output: {{ selectedModel.toUpperCase() }} (2.5m SR)</span>
+                                        <span class="chip chip--ok" style="font-size: 10px;">4x Neural</span>
+                                    </div>
+                                    <div class="sr-img-wrapper sr-img-wrapper--sync"
+                                         :style="{ cursor: syncZoom > 1.05 ? (isSyncPanning ? 'grabbing' : 'grab') : 'default' }">
+                                        <img v-if="hasSR"
+                                             :src="srImage"
+                                             alt="2.5m Super-Resolved"
+                                             :style="syncTransformStyle"
+                                             draggable="false" />
+                                        <div v-else class="empty py-12">Pending inference</div>
+                                    </div>
+                                    <div class="sr-meta">Resolution: 2.5m/px • Model: {{ selectedModel.toUpperCase() }} (&lt;4m GSD)</div>
+                                </div>
+
+                                <!-- Panel 3: Reference Ground Truth HR (1.5m) -->
+                                <div class="sr-side-card">
+                                    <div class="sr-card-title d-flex justify-space-between align-center">
+                                        <span>Reference: {{ referenceTierLabel || 'Ground Truth HR (1.5m)' }}</span>
+                                        <span :class="['chip', hrImage ? 'chip--ok' : 'chip--neutral']" style="font-size: 10px;">
+                                            {{ hrImage ? 'SPOT 1.5m' : 'Independent' }}
+                                        </span>
+                                    </div>
+                                    <div class="sr-img-wrapper sr-img-wrapper--sync"
+                                         :style="{ cursor: syncZoom > 1.05 ? (isSyncPanning ? 'grabbing' : 'grab') : 'default' }">
+                                        <img v-if="hrImage"
+                                             :src="hrImage"
+                                             alt="1.5m Reference Ground Truth"
+                                             :style="syncTransformStyle"
+                                             draggable="false" />
+                                        <div v-else class="empty py-12">
+                                            <v-icon small color="dim" class="mb-1">mdi-image-off-outline</v-icon>
+                                            <div class="text-caption">Independent AOI (No Paired Reference)</div>
+                                        </div>
+                                    </div>
+                                    <div class="sr-meta">Resolution: 1.5m/px • Paired SPOT 6/7 Optical Reference</div>
+                                </div>
                             </div>
                         </div>
                         <div v-else class="empty py-12">No satellite imagery loaded</div>
@@ -320,12 +397,21 @@
 
                         <v-btn color="primary"
                                outlined small
-                               class="mt-2"
+                               class="mt-2 mr-2"
                                :disabled="busy || !hasSR"
                                :loading="registeringChain"
                                @click="onRegisterOnChain">
                             <v-icon left small>mdi-cube-outline</v-icon>
                             Verify & Anchor On-Chain
+                        </v-btn>
+
+                        <v-btn outlined small
+                               class="mt-2"
+                               :disabled="busy || !hasSR"
+                               :href="geotiffDownloadUrl"
+                               target="_blank">
+                            <v-icon left small>mdi-download</v-icon>
+                            GeoTIFF
                         </v-btn>
                     </div>
                 </SectionCard>
@@ -348,6 +434,7 @@ import {
     runSuperResolution,
     detectInfrastructure,
     registerTileOnChain,
+    srDownloadUrl,
 } from "@/modules/api";
 
 import { ISRPreset, ISRResult, IInfrastructureResult } from "@/models";
@@ -369,16 +456,27 @@ export default class SuperResolutionView extends Vue {
     private loadingTile = false;
     private runningSR = false;
     private registeringChain = false;
+    private detectingInfra = false;
     private activeTab = 0;
+    private srError: string | null = null;
 
     private lrImage = "";
     private srImage = "";
+    private hrImage = "";
+    private referenceTierLabel = "";
     private confidenceMap = "";
     private cloudMask = "";
     private infraOverlay = "";
 
-    private meanConfidence = 0.88;
-    private hallucinationPct = 3.2;
+    private syncZoom = 1.0;
+    private syncPanX = 0;
+    private syncPanY = 0;
+    private isSyncPanning = false;
+    private syncDragStartX = 0;
+    private syncDragStartY = 0;
+
+    private meanConfidence: number | null = null;
+    private hallucinationPct: number | null = null;
     private cloudCoveragePct = 0.0;
     private cloudWarning: string | null = null;
     private inferenceTimeMs = 0;
@@ -388,16 +486,16 @@ export default class SuperResolutionView extends Vue {
     private infraRoadLength = 0;
     private infraBuiltArea = 0;
 
-    private metricPSNR = "31.42";
-    private metricSSIM = "0.892";
-    private metricSAM = "0.081";
-    private metricNIQE = "4.12";
-    private metricBRISQUE = "28.5";
+    private metricPSNR = "--";
+    private metricSSIM = "--";
+    private metricSAM = "--";
+    private metricNIQE = "--";
+    private metricBRISQUE = "--";
 
-    private tileHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    private tileHash = "";
     private txHash = "";
     private explorerUrl = "https://amoy.polygonscan.com";
-    private chainStatus = "simulated";
+    private chainStatus = "pending";
 
     private readonly modelOptions = [
         { text: "HAT (WorldStrat x4 ONNX - Production)", value: "hat" },
@@ -407,9 +505,13 @@ export default class SuperResolutionView extends Vue {
         { text: "SwinIR (Swin Transformer)", value: "swinir" },
     ];
 
+    private get geotiffDownloadUrl(): string {
+        return srDownloadUrl("geotiff");
+    }
+
     private get presetItems() {
         if (this.presets.length > 0) {
-            return this.presets.map(p => ({ text: p.name, value: p.id }));
+            return this.presets.map(p => ({ text: p.name || p.title || p.id, value: p.id }));
         }
         return [
             { text: "Punjab Agricultural Farmland (SPOT 1.5m Reference)", value: "punjab_agri" },
@@ -419,7 +521,7 @@ export default class SuperResolutionView extends Vue {
     }
 
     private get busy(): boolean {
-        return this.loadingTile || this.runningSR || this.registeringChain;
+        return this.loadingTile || this.runningSR || this.registeringChain || this.detectingInfra;
     }
 
     private get hasLR(): boolean {
@@ -435,12 +537,13 @@ export default class SuperResolutionView extends Vue {
     }
 
     private get trustScoreLabel(): string {
-        return `${Math.round(this.meanConfidence * 100)}`;
+        return this.meanConfidence !== null ? `${Math.round(this.meanConfidence * 100)}` : "--";
     }
 
     private get statusLabel(): string {
         if (this.runningSR) return "inferring";
         if (this.loadingTile) return "fetching";
+        if (this.detectingInfra) return "extracting";
         if (this.hasSR) return "complete";
         if (this.hasLR) return "ready";
         return "idle";
@@ -453,15 +556,72 @@ export default class SuperResolutionView extends Vue {
     }
 
     private get tileHashLabel(): string {
-        return this.tileHash || "Pending Tile";
+        return this.tileHash || "Pending SR inference";
     }
 
     private get blockchainStatusLabel(): string {
-        return this.chainStatus === "verified" ? "On-Chain Verified" : "Simulated Ledger";
+        if (this.chainStatus === "verified") return "On-Chain Verified";
+        if (this.chainStatus === "simulated") return "Simulated Ledger";
+        return "Not Registered";
     }
 
     private get blockchainTone(): string {
-        return this.chainStatus === "verified" ? "ok" : "warn";
+        if (this.chainStatus === "verified") return "ok";
+        if (this.chainStatus === "simulated") return "warn";
+        return "neutral";
+    }
+
+    private get syncTransformStyle(): Record<string, string> {
+        return {
+            transform: `translate(${this.syncPanX}px, ${this.syncPanY}px) scale(${this.syncZoom})`,
+            transformOrigin: "center center",
+            transition: this.isSyncPanning ? "none" : "transform 0.12s ease-out",
+        };
+    }
+
+    private zoomIn(): void {
+        this.syncZoom = Math.min(6.0, +(this.syncZoom * 1.35).toFixed(2));
+    }
+
+    private zoomOut(): void {
+        this.syncZoom = Math.max(1.0, +(this.syncZoom * 0.74).toFixed(2));
+        if (this.syncZoom <= 1.05) {
+            this.syncPanX = 0;
+            this.syncPanY = 0;
+        }
+    }
+
+    private resetZoom(): void {
+        this.syncZoom = 1.0;
+        this.syncPanX = 0;
+        this.syncPanY = 0;
+    }
+
+    private onSyncWheel(e: WheelEvent): void {
+        const delta = e.deltaY < 0 ? 1.2 : 0.83;
+        const newZoom = Math.max(1.0, Math.min(6.0, +(this.syncZoom * delta).toFixed(2)));
+        this.syncZoom = newZoom;
+        if (this.syncZoom <= 1.05) {
+            this.syncPanX = 0;
+            this.syncPanY = 0;
+        }
+    }
+
+    private onSyncMouseDown(e: MouseEvent): void {
+        if (this.syncZoom <= 1.05) return;
+        this.isSyncPanning = true;
+        this.syncDragStartX = e.clientX - this.syncPanX;
+        this.syncDragStartY = e.clientY - this.syncPanY;
+    }
+
+    private onSyncMouseMove(e: MouseEvent): void {
+        if (!this.isSyncPanning) return;
+        this.syncPanX = e.clientX - this.syncDragStartX;
+        this.syncPanY = e.clientY - this.syncDragStartY;
+    }
+
+    private onSyncMouseUp(): void {
+        this.isSyncPanning = false;
     }
 
     private async mounted() {
@@ -474,18 +634,42 @@ export default class SuperResolutionView extends Vue {
         this.onFetchTile();
     }
 
+    private resetMetrics(): void {
+        this.meanConfidence = null;
+        this.hallucinationPct = null;
+        this.metricPSNR = "--";
+        this.metricSSIM = "--";
+        this.metricSAM = "--";
+        this.metricNIQE = "--";
+        this.metricBRISQUE = "--";
+        this.tileHash = "";
+        this.txHash = "";
+        this.chainStatus = "pending";
+    }
+
     private async onFetchTile() {
         this.loadingTile = true;
+        this.srError = null;
         try {
             const res = await fetchSRTile(this.selectedPresetId);
-            if (res && res.preview_base64) {
-                this.lrImage = res.preview_base64;
+            const preview = res?.lr_preview || res?.preview_base64;
+            if (preview) {
+                this.lrImage = preview;
+                this.hrImage = res.hr_preview || "";
+                this.referenceTierLabel = res.reference_tier_label || (res.is_scientific_ground_truth ? "Ground Truth HR (1.5m)" : "");
                 this.srImage = "";
                 this.confidenceMap = "";
+                this.infraOverlay = "";
+                this.activeTab = 0;
                 this.cloudWarning = res.cloud_warning || null;
                 this.cloudCoveragePct = res.cloud_coverage_pct || 0.0;
+                this.resetZoom();
+                this.resetMetrics();
+            } else {
+                this.srError = "Tile fetch succeeded but no preview image was returned.";
             }
         } catch (e) {
+            this.srError = e instanceof Error ? e.message : String(e);
             console.error("Fetch tile error:", e);
         } finally {
             this.loadingTile = false;
@@ -495,6 +679,7 @@ export default class SuperResolutionView extends Vue {
     private async onRunSR() {
         if (!this.hasLR) return;
         this.runningSR = true;
+        this.srError = null;
         try {
             const res: ISRResult = await runSuperResolution({
                 model_name: this.selectedModel,
@@ -506,31 +691,40 @@ export default class SuperResolutionView extends Vue {
 
             if (res) {
                 this.srImage = res.sr_preview;
-                if (res.confidence_heatmap_preview) {
-                    this.confidenceMap = res.confidence_heatmap_preview;
+                if (res.hr_preview) {
+                    this.hrImage = res.hr_preview;
                 }
-                this.inferenceTimeMs = res.inference_time_ms || 320;
-                this.meanConfidence = res.mean_confidence || 0.89;
-                this.hallucinationPct = res.hallucination_pct || 3.1;
-
-                if (res.metrics) {
-                    if (res.metrics.psnr) this.metricPSNR = res.metrics.psnr.toFixed(2);
-                    if (res.metrics.ssim) this.metricSSIM = res.metrics.ssim.toFixed(3);
-                    if (res.metrics.sam) this.metricSAM = res.metrics.sam.toFixed(3);
-                    if (res.metrics.niqe) this.metricNIQE = res.metrics.niqe.toFixed(2);
-                    if (res.metrics.brisque) this.metricBRISQUE = res.metrics.brisque.toFixed(1);
+                if (res.reference_tier_label) {
+                    this.referenceTierLabel = res.reference_tier_label;
+                }
+                this.confidenceMap = res.confidence_heatmap_preview || res.confidence_heatmap || "";
+                this.inferenceTimeMs = res.inference_time_ms || 0;
+                if (typeof res.mean_confidence === "number") {
+                    this.meanConfidence = res.mean_confidence;
+                } else if (typeof res.usp_metrics?.avg_confidence === "number") {
+                    this.meanConfidence = res.usp_metrics.avg_confidence / 100.0;
+                }
+                if (typeof res.hallucination_pct === "number") {
+                    this.hallucinationPct = res.hallucination_pct;
                 }
 
-                if (res.blockchain_record) {
-                    this.tileHash = res.blockchain_record.sha256;
-                    this.chainStatus = res.blockchain_record.status;
-                    if (res.blockchain_record.tx_hash) {
-                        this.txHash = res.blockchain_record.tx_hash;
-                        this.explorerUrl = res.blockchain_record.explorer_url || this.explorerUrl;
-                    }
+                const m = res.metrics || {};
+                this.metricPSNR = typeof m.psnr === "number" ? m.psnr.toFixed(2) : "N/A";
+                this.metricSSIM = typeof m.ssim === "number" ? m.ssim.toFixed(3) : "N/A";
+                this.metricSAM = typeof m.sam === "number" ? m.sam.toFixed(2) : "N/A";
+                this.metricNIQE = typeof m.niqe === "number" ? m.niqe.toFixed(2) : "--";
+                this.metricBRISQUE = typeof m.brisque === "number" ? m.brisque.toFixed(1) : "--";
+
+                const rec = res.blockchain_record || res.blockchain_provenance;
+                if (rec) {
+                    this.tileHash = rec.sha256 || rec.imageHash || "";
+                    this.chainStatus = rec.status || (rec.mode === "polygon_amoy" ? "verified" : "simulated");
+                    this.txHash = rec.tx_hash || rec.txHash || "";
+                    this.explorerUrl = rec.explorer_url || rec.txLink || this.explorerUrl;
                 }
             }
         } catch (e) {
+            this.srError = e instanceof Error ? e.message : String(e);
             console.error("SR execution error:", e);
         } finally {
             this.runningSR = false;
@@ -538,34 +732,49 @@ export default class SuperResolutionView extends Vue {
     }
 
     private async onDetectInfrastructure() {
+        this.detectingInfra = true;
+        this.srError = null;
         try {
             const res: IInfrastructureResult = await detectInfrastructure();
             if (res) {
-                this.infraBuildings = res.building_count;
-                this.infraRoads = res.road_count;
-                this.infraRoadLength = parseFloat(res.total_road_length_km.toFixed(2));
-                this.infraBuiltArea = parseFloat(res.total_built_area_km2.toFixed(3));
-                if (res.overlay_preview) {
-                    this.infraOverlay = res.overlay_preview;
+                const summary = res.infrastructure_summary;
+                this.infraBuildings = res.building_count ?? summary?.buildings_count ?? 0;
+                this.infraRoads = res.road_count ?? summary?.road_segments_count ?? 0;
+                const roadKm = res.total_road_length_km ?? summary?.roads_length_km ?? 0;
+                const builtKm2 = res.total_built_area_km2 ?? summary?.total_built_area_km2 ?? 0;
+                this.infraRoadLength = parseFloat(Number(roadKm).toFixed(2));
+                this.infraBuiltArea = parseFloat(Number(builtKm2).toFixed(4));
+                const overlay = res.overlay_preview || res.infrastructure_overlay;
+                if (overlay) {
+                    this.infraOverlay = overlay;
                     this.activeTab = 3;
                 }
             }
         } catch (e) {
+            this.srError = e instanceof Error ? e.message : String(e);
             console.error("Infrastructure detection error:", e);
+        } finally {
+            this.detectingInfra = false;
         }
     }
 
     private async onRegisterOnChain() {
         this.registeringChain = true;
+        this.srError = null;
         try {
-            const res = await registerTileOnChain();
+            const res = await registerTileOnChain(this.selectedPresetId);
             if (res && res.record) {
-                this.chainStatus = res.record.status;
-                if (res.record.tx_hash) {
-                    this.txHash = res.record.tx_hash;
+                this.tileHash = res.record.sha256 || res.record.imageHash || this.tileHash;
+                this.chainStatus = res.record.status || (res.record.mode === "polygon_amoy" ? "verified" : "simulated");
+                if (res.record.tx_hash || res.record.txHash) {
+                    this.txHash = res.record.tx_hash || res.record.txHash;
+                }
+                if (res.record.explorer_url || res.record.txLink) {
+                    this.explorerUrl = res.record.explorer_url || res.record.txLink;
                 }
             }
         } catch (e) {
+            this.srError = e instanceof Error ? e.message : String(e);
             console.error("Register on-chain error:", e);
         } finally {
             this.registeringChain = false;
@@ -587,13 +796,13 @@ export default class SuperResolutionView extends Vue {
 }
 
 .sr-alert {
-    background: rgba(251, 185, 49, 0.08) !important;
-    border: 1px solid rgba(251, 185, 49, 0.25);
-    color: #fbb931 !important;
+    background: var(--rahat-warn-soft) !important;
+    border: 1px solid var(--rahat-warn);
+    color: var(--rahat-warn) !important;
 }
 
 .sr-workspace-tabs {
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    border-top: 1px solid var(--rahat-border);
 }
 
 .sr-single-preview {
@@ -602,8 +811,8 @@ export default class SuperResolutionView extends Vue {
     margin: 0 auto;
     border-radius: 8px;
     overflow: hidden;
-    background: #080808;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--rahat-map-bg);
+    border: 1px solid var(--rahat-border);
 
     .sr-image {
         width: 100%;
@@ -636,9 +845,41 @@ export default class SuperResolutionView extends Vue {
     }
 }
 
+.sr-side-by-side--3col {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+
+    @media (max-width: 1200px) {
+        grid-template-columns: 1fr;
+    }
+}
+
+.sr-sync-toolbar {
+    background: var(--rahat-surface-2);
+    border: 1px solid var(--rahat-border);
+    border-radius: 8px;
+    padding: 6px 12px;
+}
+
+.sr-img-wrapper--sync {
+    position: relative;
+    user-select: none;
+    overflow: hidden;
+
+    img {
+        user-select: none;
+        -webkit-user-drag: none;
+        pointer-events: none;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+    }
+}
+
 .sr-side-card {
-    background: #0c0c0c;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: var(--rahat-surface-2);
+    border: 1px solid var(--rahat-border);
     border-radius: 8px;
     padding: 12px;
 }
@@ -654,7 +895,7 @@ export default class SuperResolutionView extends Vue {
 .sr-img-wrapper {
     width: 100%;
     aspect-ratio: 1 / 1;
-    background: #000;
+    background: var(--rahat-map-bg);
     border-radius: 6px;
     overflow: hidden;
 
@@ -691,12 +932,12 @@ export default class SuperResolutionView extends Vue {
     justify-content: space-between;
     align-items: baseline;
     padding: 8px 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    border-bottom: 1px solid var(--rahat-border);
 }
 
 .metric-box {
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: var(--rahat-surface-2);
+    border: 1px solid var(--rahat-border);
     border-radius: 6px;
     padding: 12px;
     text-align: center;
@@ -704,7 +945,7 @@ export default class SuperResolutionView extends Vue {
     .metric-val {
         font-size: 20px;
         font-weight: 700;
-        color: #38bdf8;
+        color: var(--rahat-info);
     }
 
     .metric-label {

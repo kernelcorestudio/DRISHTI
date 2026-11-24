@@ -125,32 +125,55 @@ class GeoTransform:
 
     @classmethod
     def from_geotiff(cls, path: Path) -> "GeoTransform":
-        with Image.open(path) as image:
-            try:
-                tie_point = image.tag[33922]
-                pixel_scale = image.tag[33550]
-            except KeyError as error:
-                raise InferenceError(
-                    f"{path} has no ModelTiePoint/ModelPixelScale tags ({error}); "
-                    "it is not a north-up GeoTIFF, so it cannot be georeferenced"
-                )
+        try:
+            with Image.open(path) as image:
+                tags = image.tag_v2 if hasattr(image, "tag_v2") else image.tag
+                try:
+                    tie_point = tags[33922]
+                    pixel_scale = tags[33550]
+                except KeyError as error:
+                    raise InferenceError(
+                        f"{path} has no ModelTiePoint/ModelPixelScale tags ({error}); "
+                        "it is not a north-up GeoTIFF, so it cannot be georeferenced"
+                    )
+        except InferenceError:
+            raise
+        except Exception as error:
+            raise InferenceError(f"{path} could not be read as a GeoTIFF: {error}") from error
+
+        try:
+            x_offset = float(tie_point[3])
+            y_offset = float(tie_point[4])
+            x_scale = float(pixel_scale[0])
+            y_scale = -abs(float(pixel_scale[1]))
+        except (IndexError, TypeError, ValueError) as error:
+            raise InferenceError(f"{path} has malformed GeoTIFF tags: {error}") from error
+
+        if not (all(math.isfinite(v) for v in (x_offset, y_offset, x_scale, y_scale)) and x_scale > 0 and y_scale < 0):
+            raise InferenceError(f"{path} has invalid ModelPixelScale/ModelTiePoint values")
 
         return cls(
-            x_offset=float(tie_point[3]),
-            y_offset=float(tie_point[4]),
-            x_scale=float(pixel_scale[0]),
-            # GDAL spec: the Y pixel scale is negative because rows run north -> south.
-            y_scale=-abs(float(pixel_scale[1])),
+            x_offset=x_offset,
+            x_scale=x_scale,
+            y_offset=y_offset,
+            y_scale=y_scale,
         )
 
-    def pixel_to_lonlat(self, x: float, y: float, ratio: float = 1.0) -> Tuple[float, float]:
+    def pixel_to_lonlat(
+        self,
+        x: float,
+        y: float,
+        ratio: float = 1.0,
+        ratio_y: Optional[float] = None,
+    ) -> Tuple[float, float]:
         """Converts a pixel coordinate of the *model* mask into (lon, lat).
 
-        `x` is the column, `y` is the row, in model-output space. `ratio` is
-        model_height / tile_height and undoes the resize the model applied.
+        `x` is the column, `y` is the row, in model-output space. `ratio` (and optional `ratio_y`
+        for non-square tiles) undoes the resize the model applied.
         """
+        ry = ratio_y if ratio_y is not None else ratio
         lon = self.x_offset + self.x_scale * x * (1.0 / ratio)
-        lat = self.y_offset + self.y_scale * y * (1.0 / ratio)
+        lat = self.y_offset + self.y_scale * y * (1.0 / ry)
         return lon, lat
 
 
@@ -172,16 +195,23 @@ def mask_to_polygons(
     from skimage import measure
 
     binary = np.where(mask == FOOTPRINT_CLASS, 255, 0).astype(np.uint8)
+    h, w = binary.shape[:2]
+    padded = np.pad(binary, pad_width=1, mode="constant", constant_values=0)
     polygons: List[Polygon] = []
 
-    for contour in measure.find_contours(binary, 1.0):
-        ring = [(float(point[1]), float(point[0])) for point in contour]
+    for contour in measure.find_contours(padded, 1.0):
+        ring = [
+            (min(max(float(point[1]) - 1.0, 0.0), float(w)), min(max(float(point[0]) - 1.0, 0.0), float(h)))
+            for point in contour
+        ]
         try:
             polygon = Polygon(ring).simplify(simplify)
+            if not polygon.is_valid:
+                polygon = polygon.buffer(0)
         except (ValueError, TypeError):
             # Simplification can degenerate a tiny contour below three points.
             continue
-        if polygon.is_valid and polygon.area > min_area:
+        if isinstance(polygon, Polygon) and polygon.is_valid and not polygon.is_empty and polygon.area > min_area:
             polygons.append(polygon)
 
     return polygons
@@ -196,13 +226,14 @@ def project_ring(
     polygon: Polygon,
     transform: GeoTransform,
     ratio: float,
+    ratio_y: Optional[float] = None,
 ) -> List[List[float]]:
     """Projects a pixel-space ring into a closed [lon, lat] ring."""
     ring = [
-        list(transform.pixel_to_lonlat(x, y, ratio))
+        list(transform.pixel_to_lonlat(x, y, ratio, ratio_y=ratio_y))
         for x, y in polygon.exterior.coords
     ]
-    if ring[0] != ring[-1]:
+    if ring and ring[0] != ring[-1]:
         ring.append(list(ring[0]))
     return ring
 
@@ -405,8 +436,8 @@ class RunStats:
 
 
 def export_path(path: Path) -> Path:
-    """load_learner() appends `.pkl` when the suffix is missing, so check that same path."""
-    return path if path.suffix else path.with_suffix(".pkl")
+    """load_learner() appends `.pkl` when not present, so preserve dotted names cleanly."""
+    return path if path.suffix == ".pkl" else Path(f"{path}.pkl")
 
 
 def load_learners(footprint_model: Path, damage_model: Path, device: Optional[str]):
@@ -441,6 +472,8 @@ def load_learners(footprint_model: Path, damage_model: Path, device: Optional[st
             device = f"cuda:{device}"
         for learn in (stage_1, stage_2):
             learn.model = learn.model.to(device)
+    for learn in (stage_1, stage_2):
+        learn.model.eval()
 
     return stage_1, stage_2
 
@@ -475,27 +508,36 @@ def process_tile(
 ) -> List[Dict]:
     transform = GeoTransform.from_geotiff(before_tile)
 
-    with Image.open(before_tile) as before_image:
-        before_rgb = np.array(before_image.convert("RGB"))
-    with Image.open(after_tile) as after_image:
-        after_rgb = np.array(after_image.convert("RGB"))
+    try:
+        with Image.open(before_tile) as before_image:
+            before_rgb = np.array(before_image.convert("RGB"))
+        with Image.open(after_tile) as after_image:
+            after_rgb = np.array(after_image.convert("RGB"))
+    except Exception as error:
+        raise InferenceError(f"failed to read tile pair ({before_tile}, {after_tile}): {error}") from error
 
     footprint_mask = footprint_class_mask(stage_1, before_rgb)
-    ratio = footprint_mask.shape[0] / before_rgb.shape[0]
+    ratio_x = footprint_mask.shape[1] / max(before_rgb.shape[1], 1)
+    ratio_y = footprint_mask.shape[0] / max(before_rgb.shape[0], 1)
     polygons = mask_to_polygons(footprint_mask, args.min_area, args.simplify)
     LOG.info("%s: %d candidate building(s)", before_tile.name, len(polygons))
 
-    if after_rgb.shape[:2] != footprint_mask.shape[:2]:
-        import cv2
-
-        after_rgb = cv2.resize(after_rgb, (footprint_mask.shape[1], footprint_mask.shape[0]))
+    from shapely.affinity import scale as scale_polygon
+    after_scale_x = after_rgb.shape[1] / max(footprint_mask.shape[1], 1)
+    after_scale_y = after_rgb.shape[0] / max(footprint_mask.shape[0], 1)
 
     features: List[Dict] = []
     for index, polygon in enumerate(polygons):
         stats.candidates += 1
         try:
+            after_polygon = scale_polygon(
+                polygon,
+                xfact=after_scale_x,
+                yfact=after_scale_y,
+                origin=(0, 0),
+            )
             crop = cut_crop(
-                after_rgb, polygon, args.crop_size, args.crop_mode, args.crop_margin
+                after_rgb, after_polygon, args.crop_size, args.crop_mode, args.crop_margin
             )
             scores = damage_scores(stage_2, crop)
         except Exception as error:  # keep going: one bad building must not kill the tile
@@ -504,7 +546,7 @@ def process_tile(
             continue
 
         affected = scores["class"] == DAMAGED_LABEL
-        ring = project_ring(polygon, transform, ratio)
+        ring = project_ring(polygon, transform, ratio_x, ratio_y=ratio_y)
         ring_lons = [point[0] for point in ring]
         ring_lats = [point[1] for point in ring]
 
@@ -536,7 +578,7 @@ def process_tile(
 def write_geojson(features: Iterable[Dict], path: Path) -> int:
     collection = {"type": "FeatureCollection", "features": list(features)}
     path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = path.with_suffix(path.suffix + ".tmp")
+    temp_path = path.with_name(f"{path.name}.{uuid.uuid4().hex[:8]}.tmp")
     with open(temp_path, "w", encoding="utf-8") as file:
         json.dump(collection, file, separators=(",", ":"))
     temp_path.replace(path)
@@ -548,7 +590,10 @@ def reload_geoserv(base_url: str, timeout: float = 30.0) -> Dict:
 
     url = f"{base_url.rstrip('/')}/disasters/reload"
     LOG.info("POST %s", url)
-    response = requests.post(url, timeout=timeout)
+    try:
+        response = requests.post(url, timeout=timeout)
+    except requests.RequestException as error:
+        raise InferenceError(f"failed to reach {url}: {error}") from error
     if not response.ok:
         raise InferenceError(f"{url} returned {response.status_code}: {response.text[:200]}")
     return response.json()
@@ -568,6 +613,8 @@ def run(args: argparse.Namespace) -> RunStats:
 
     if not before_tiles:
         raise InferenceError(f"no tiles matched {args.pattern!r} in {args.before_dir}")
+    if not pairs:
+        raise InferenceError(f"no matching after tiles found in {args.after_dir}")
 
     LOG.info("%d tile pair(s) to process", len(pairs))
     stage_1, stage_2 = load_learners(
@@ -623,7 +670,7 @@ def demo_features(
     seed: int = 7,
 ) -> List[Dict]:
     """Synthetic buildings used to exercise the UI without imagery or models."""
-    random.seed(seed)
+    rng = random.Random(seed)
     features: List[Dict] = []
     for index in range(count):
         row, column = divmod(index, 12)
@@ -635,8 +682,8 @@ def demo_features(
         ring.append(ring[0])
 
         # Skew the distribution towards undamaged, like a real event.
-        probability = random.choice(
-            [random.uniform(0.02, 0.45), random.uniform(0.3, 0.6), random.uniform(0.86, 0.99)]
+        probability = rng.choice(
+            [rng.uniform(0.02, 0.45), rng.uniform(0.3, 0.6), rng.uniform(0.86, 0.99)]
         )
         severity = severity_for(probability)
         affected = severity != "none"
@@ -651,7 +698,7 @@ def demo_features(
                     "damage_class": DEMO_DAMAGE_CLASS[severity],
                     "damage_probability": round(probability, 4),
                     "confidence": round(max(probability, 1.0 - probability), 4),
-                    "area_px": random.randint(250, 900),
+                    "area_px": rng.randint(250, 900),
                     "zone": zone,
                     "tile": f"{zone}-demo",
                     "footprint_index": index,
@@ -721,13 +768,18 @@ def self_test(args: argparse.Namespace) -> int:
               str(bounds))
 
     # 3. Pixel ring -> lon/lat ring, with a valid bbox.
-    ring = project_ring(polygons[0], transform, 1.0)
-    check("ring is closed", ring[0] == ring[-1], f"{len(ring)} points")
-    lons = [p[0] for p in ring]
-    lats = [p[1] for p in ring]
-    check("ring is geographically sane",
-          -180 < min(lons) < 180 and -90 < min(lats) < 90, f"{min(lons)}, {min(lats)}")
-    check("bbox spans the ring", max(lons) > min(lons) and max(lats) > min(lats))
+    if polygons:
+        ring = project_ring(polygons[0], transform, 1.0)
+        check("ring is closed", ring[0] == ring[-1], f"{len(ring)} points")
+        lons = [p[0] for p in ring]
+        lats = [p[1] for p in ring]
+        check("ring is geographically sane",
+              -180 < min(lons) < 180 and -90 < min(lats) < 90, f"{min(lons)}, {min(lats)}")
+        check("bbox spans the ring", max(lons) > min(lons) and max(lats) > min(lats))
+    else:
+        check("ring is closed", False, "no polygons detected")
+        check("ring is geographically sane", False, "no polygons detected")
+        check("bbox spans the ring", False, "no polygons detected")
 
     # 4. Severity tiers.
     check("0.99 is severe", severity_for(0.99) == "severe")

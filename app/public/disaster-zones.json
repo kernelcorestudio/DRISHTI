@@ -1,44 +1,128 @@
 [
     {
+        "id": "a82d8d06-571f-55d4-bcf9-9b27133ca2e0",
+        "name": "Palu 2018 tsunami - Indonesia",
+        "center": {
+            "lat": -0.904229,
+            "lng": 119.842968,
+            "zoom": 18
+        },
+        "beforeLayer": {
+            "urlTemplate": "/tiles/demo-palu-tsunami_00000118/before/{z}/{x}/{y}.png",
+            "attributionHtml": "&copy; xView2 xBD (Maxar)"
+        },
+        "afterLayer": {
+            "urlTemplate": "/tiles/demo-palu-tsunami_00000118/after/{z}/{x}/{y}.png",
+            "attributionHtml": "&copy; xView2 xBD (Maxar)"
+        },
+        "amenitiesUrl": null,
+        "affectedStructuresUrl": "http://127.0.0.1:8088/geo/demo-palu-tsunami_00000118/structures-affected",
+        "unaffectedStructuresUrl": "http://127.0.0.1:8088/geo/demo-palu-tsunami_00000118/structures-unaffected",
+        "heatmapUrl": "http://127.0.0.1:8088/geo/demo-palu-tsunami_00000118/structures-affected/heatmap"
+    },
+    {
+        "id": "6d6cb92d-921e-5144-9d5e-0af39457e8e0",
+        "name": "Harvey 2017 - Houston, TX",
+        "center": {
+            "lat": 29.843463,
+            "lng": -95.632594,
+            "zoom": 18
+        },
+        "beforeLayer": {
+            "urlTemplate": "/tiles/demo-hurricane-harvey_00000146/before/{z}/{x}/{y}.png",
+            "attributionHtml": "&copy; xView2 xBD (Maxar)"
+        },
+        "afterLayer": {
+            "urlTemplate": "/tiles/demo-hurricane-harvey_00000146/after/{z}/{x}/{y}.png",
+            "attributionHtml": "&copy; xView2 xBD (Maxar)"
+        },
+        "amenitiesUrl": null,
+        "affectedStructuresUrl": "http://127.0.0.1:8088/geo/demo-hurricane-harvey_00000146/structures-affected",
+        "unaffectedStructuresUrl": "http://127.0.0.1:8088/geo/demo-hurricane-harvey_00000146/structures-unaffected",
+        "heatmapUrl": "http://127.0.0.1:8088/geo/demo-hurricane-harvey_00000146/structures-affected/heatmap"
+    },
+    {
+        "id": "acee9728-74c1-5498-91ae-1f9a5879de54",
+        "name": "Michael 2018 - Panama City, FL",
+        "center": {
+            "lat": 30.150564,
+            "lng": -85.617673,
+            "zoom": 18
+        },
+        "beforeLayer": {
+            "urlTemplate": "/tiles/demo-hurricane-michael_00000247/before/{z}/{x}/{y}.png",
+            "attributionHtml": "&copy; xView2 xBD (Maxar)"
+        },
+        "afterLayer": {
+            "urlTemplate": "/tiles/demo-hurricane-michael_00000247/after/{z}/{x}/{y}.png",
+            "attributionHtml": "&copy; xView2 xBD (Maxar)"
+        },
+        "amenitiesUrl": null,
+        "affectedStructuresUrl": "http://127.0.0.1:8088/geo/demo-hurricane-michael_00000247/structures-affected",
+        "unaffectedStructuresUrl": "http://127.0.0.1:8088/geo/demo-hurricane-michael_00000247/structures-unaffected",
+        "heatmapUrl": "http://127.0.0.1:8088/geo/demo-hurricane-michael_00000247/structures-affected/heatmap"
+    },
+    {
+        "id": "cd8d30d2-848a-56e3-bbd8-2ea8cdfac1c5",
+        "name": "Matthew 2016 - Les Cayes, Haiti",
+        "center": {
+            "lat": 18.18672,
+            "lng": -73.755261,
+            "zoom": 18
+        },
+        "beforeLayer": {
+            "urlTemplate": "/tiles/demo-hurricane-matthew_00000156/before/{z}/{x}/{y}.png",
+            "attributionHtml": "&copy; xView2 xBD (Maxar)"
+        },
+        "afterLayer": {
+            "urlTemplate": "/tiles/demo-hurricane-matthew_00000156/after/{z}/{x}/{y}.png",
+            "attributionHtml": "&copy; xView2 xBD (Maxar)"
+        },
+        "amenitiesUrl": null,
+        "affectedStructuresUrl": "http://127.0.0.1:8088/geo/demo-hurricane-matthew_00000156/structures-affected",
+        "unaffectedStructuresUrl": "http://127.0.0.1:8088/geo/demo-hurricane-matthew_00000156/structures-unaffected",
+        "heatmapUrl": "http://127.0.0.1:8088/geo/demo-hurricane-matthew_00000156/structures-affected/heatmap"
+    },
+    {
         "id": "74698739-0104-4d31-a42b-930646e41127",
         "name": "New Orleans",
         "center": {
-            "lat": 30.0312644,
-            "lng": -90.0227344,
-            "zoom": 10
+            "lat": 29.964,
+            "lng": -90.095,
+            "zoom": 17
         },
         "beforeLayer": {
             "urlTemplate": "https://disavu.silentbyte.com/tiles/rgb/105001001E0A3300/{z}/{x}/{y}.png?r=1&r_range=[0,255]&g=2&g_range=[0,255]&b=3&b_range=[0,255]",
-            "attributionHtml": "&copy; <a href=\\\"https://www.maxar.com/open-data\\\">Maxar</a>"
+            "attributionHtml": "&copy; <a href=\"https://www.maxar.com/open-data\">Maxar</a>"
         },
         "afterLayer": {
             "urlTemplate": "https://disavu.silentbyte.com/tiles/rgb/10300100C540A500/{z}/{x}/{y}.png?r=1&r_range=[0,255]&g=2&g_range=[0,255]&b=3&b_range=[0,255]",
-            "attributionHtml": "&copy; <a href=\\\"https://www.maxar.com/open-data\\\">Maxar</a>"
+            "attributionHtml": "&copy; <a href=\"https://www.maxar.com/open-data\">Maxar</a>"
         },
-        "amenitiesUrl": "https://disavu.silentbyte.com/geoserv/geo/new-orleans/amenities",
-        "affectedStructuresUrl": "https://disavu.silentbyte.com/geoserv/geo/new-orleans/structures-affected",
-        "unaffectedStructuresUrl": "https://disavu.silentbyte.com/geoserv/geo/new-orleans/structures-unaffected",
-        "heatmapUrl": "https://disavu.silentbyte.com/geoserv/geo/new-orleans/structures-affected/heatmap"
+        "amenitiesUrl": "http://127.0.0.1:8088/geo/new-orleans/amenities",
+        "affectedStructuresUrl": "http://127.0.0.1:8088/geo/new-orleans/structures-affected",
+        "unaffectedStructuresUrl": "http://127.0.0.1:8088/geo/new-orleans/structures-unaffected",
+        "heatmapUrl": "http://127.0.0.1:8088/geo/new-orleans/structures-affected/heatmap"
     },
     {
         "id": "83c6f91d-7c3a-4a43-83f3-9f3541dc6441",
         "name": "Oman",
         "center": {
-            "lat": 23.5909276,
-            "lng": 58.5182752,
-            "zoom": 10
+            "lat": 23.596,
+            "lng": 58.525,
+            "zoom": 17
         },
         "beforeLayer": {
             "urlTemplate": "https://disavu.silentbyte.com/tiles/rgb/10500100271BF800/{z}/{x}/{y}.png?r=1&r_range=[0,255]&g=2&g_range=[0,255]&b=3&b_range=[0,255]",
-            "attributionHtml": "&copy; <a href=\\\"https://www.maxar.com/open-data\\\">Maxar</a>"
+            "attributionHtml": "&copy; <a href=\"https://www.maxar.com/open-data\">Maxar</a>"
         },
         "afterLayer": {
             "urlTemplate": "https://disavu.silentbyte.com/tiles/rgb/1050010027849000/{z}/{x}/{y}.png?r=1&r_range=[0,255]&g=2&g_range=[0,255]&b=3&b_range=[0,255]",
-            "attributionHtml": "&copy; <a href=\\\"https://www.maxar.com/open-data\\\">Maxar</a>"
+            "attributionHtml": "&copy; <a href=\"https://www.maxar.com/open-data\">Maxar</a>"
         },
-        "amenitiesUrl": null,
-        "affectedStructuresUrl": "https://disavu.silentbyte.com/geoserv/geo/oman/structures-affected",
-        "unaffectedStructuresUrl": "https://disavu.silentbyte.com/geoserv/geo/oman/structures-unaffected",
-        "heatmapUrl": "https://disavu.silentbyte.com/geoserv/geo/oman/structures-affected/heatmap"
+        "amenitiesUrl": "http://127.0.0.1:8088/geo/oman/amenities",
+        "affectedStructuresUrl": "http://127.0.0.1:8088/geo/oman/structures-affected",
+        "unaffectedStructuresUrl": "http://127.0.0.1:8088/geo/oman/structures-unaffected",
+        "heatmapUrl": "http://127.0.0.1:8088/geo/oman/structures-affected/heatmap"
     }
 ]

@@ -100,6 +100,54 @@ body,
     color: var(--rahat-text-faint);
 }
 
+.chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    border: 1px solid var(--rahat-border);
+    background: var(--rahat-surface-2);
+    color: var(--rahat-text-dim);
+}
+
+.chip--ok,
+.chip--succeeded,
+.chip--ready {
+    background: var(--rahat-ok-soft);
+    border-color: var(--rahat-ok);
+    color: var(--rahat-ok);
+}
+
+.chip--warn,
+.chip--running,
+.chip--queued {
+    background: var(--rahat-warn-soft);
+    border-color: var(--rahat-warn);
+    color: var(--rahat-warn);
+}
+
+.chip--bad,
+.chip--failed,
+.chip--degraded {
+    background: var(--rahat-danger-soft);
+    border-color: var(--rahat-danger);
+    color: var(--rahat-danger);
+}
+
+.empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: var(--rahat-text-faint);
+    font-size: 13px;
+    padding: 20px;
+}
+
 /* ---------------------------------------------------------------------------------------------
  * Primitives
  *

@@ -1,6 +1,6 @@
 from solaris.tile.raster_tile import RasterTiler
-import gdal
-from gdalconst import GA_ReadOnly
+from osgeo import gdal
+from osgeo.gdalconst import GA_ReadOnly
 from typing_extensions import TypedDict
 from shapely.geometry import box
 import matplotlib.pyplot as plt
@@ -21,15 +21,17 @@ from click.testing import CliRunner
 # gdal.Translate('output_crop_raster.tif', 'input_raster.tif', projWin = bbox)
 
 class BoundsDict(TypedDict):
-    minx: str
-    maxx: str
-    miny: str
-    maxy: str
+    minx: float
+    maxx: float
+    miny: float
+    maxy: float
 
 
 class GeoData():
     def __init__(self, filename: str):
         data = gdal.Open(filename, GA_ReadOnly)
+        if data is None:
+            raise FileNotFoundError(f"Could not open GeoTIFF: {filename}")
         geoTransform = data.GetGeoTransform()
         minx = geoTransform[0]
         maxy = geoTransform[3]

@@ -83,26 +83,39 @@ export class AppModule extends VuexModule {
     setSelectedDisasterZone(disasterZone: IDisasterZone | null): void {
         this.selectedDisasterZone = disasterZone;
 
-        if(disasterZone) {
-            localStorage.setItem("selected-disaster-zone", disasterZone.id);
-        } else {
-            localStorage.removeItem("selected-disaster-zone");
+        try {
+            if(disasterZone) {
+                localStorage.setItem("selected-disaster-zone", disasterZone.id);
+            } else {
+                localStorage.removeItem("selected-disaster-zone");
+            }
+        } catch(error) {
+            // Storage may be unavailable in restricted contexts.
         }
     }
 
     @Mutation
     setDefaultDisasterZone(): void {
-        const id = localStorage.getItem("selected-disaster-zone");
+        let id: string | null = null;
+        try {
+            id = localStorage.getItem("selected-disaster-zone");
+        } catch(error) {
+            id = null;
+        }
         const disasterZone = id
             ? this.disasterZones.find(dz => dz.id === id) || this.disasterZones[0] || null
-            : this.disasterZones[0];
+            : this.disasterZones[0] || null;
 
         this.selectedDisasterZone = disasterZone;
 
-        if(disasterZone) {
-            localStorage.setItem("selected-disaster-zone", disasterZone.id);
-        } else {
-            localStorage.removeItem("selected-disaster-zone");
+        try {
+            if(disasterZone) {
+                localStorage.setItem("selected-disaster-zone", disasterZone.id);
+            } else {
+                localStorage.removeItem("selected-disaster-zone");
+            }
+        } catch(error) {
+            // Storage may be unavailable in restricted contexts.
         }
     }
 }

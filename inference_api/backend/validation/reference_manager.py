@@ -17,7 +17,7 @@ import hashlib
 import time
 from PIL import Image as PILImage
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+from backend.config import BASE_DIR
 
 class ReferenceEntry(TypedDict):
     aoi_id: str
@@ -296,12 +296,6 @@ def fetch_tier3_leafmap_basemap(bbox: list[float], output_path: Path) -> np.ndar
     try:
         pil_img = PILImage.open(output_path).convert("RGB")
         arr = np.asarray(pil_img, dtype=np.float32) / 255.0
-        # Automatically clean up custom drawn AOI files so they never litter the project directory
-        if "custom" in output_path.name.lower() and output_path.exists():
-            try:
-                output_path.unlink(missing_ok=True)
-            except Exception:
-                pass
         return arr
     except Exception as e:
         print(f"[Tier-3 Basemap] ERROR reading cached GeoTIFF {output_path}: {e}")

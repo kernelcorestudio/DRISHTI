@@ -223,9 +223,12 @@ class InfrastructureDetector:
             return [round(float(lon), 6), round(float(lat), 6)]
 
         # Add Building Footprints (Polygon)
+        built_area_m2 = 0.0
         for i, (c, conf) in enumerate(valid_buildings):
             poly_coords = [pixel_to_geo(pt[0][0], pt[0][1]) for pt in c]
             if len(poly_coords) >= 3:
+                area_m2 = float(cv2.contourArea(c)) * 6.25
+                built_area_m2 += area_m2
                 poly_coords.append(poly_coords[0])  # Close ring
                 features.append({
                     "type": "Feature",
@@ -236,7 +239,7 @@ class InfrastructureDetector:
                         "name": f"Building Footprint #{i+1}",
                         "confidence_score": round(conf * 100, 1),
                         "confidence_pct": f"{round(conf * 100, 1)}%",
-                        "footprint_area_m2": round(cv2.contourArea(c) * 6.25, 1),
+                        "footprint_area_m2": round(area_m2, 1),
                         "polygon_vertices": len(poly_coords) - 1,
                         "prompt": self.text_prompt,
                         "box_threshold": self.box_threshold,
@@ -269,8 +272,10 @@ class InfrastructureDetector:
                 })
 
         all_confs = bldg_confidences + road_confidences
-        avg_conf = round(float(np.mean(all_confs)) * 100, 1) if all_confs else 85.0
+        avg_conf = round(float(np.mean(all_confs)) * 100, 1) if all_confs else 0.0
         total_km = round((road_length_px * 2.5) / 1000.0, 2)
+        total_road_area_km2 = round((road_length_px * 2.5 * 7.5) / 1_000_000.0, 4)
+        total_built_area_km2 = round(built_area_m2 / 1_000_000.0, 4)
 
         geojson_data = {
             "type": "FeatureCollection",
@@ -314,8 +319,13 @@ class InfrastructureDetector:
 
         summary = {
             "buildings_count": len(valid_buildings),
+            "building_count": len(valid_buildings),
             "roads_length_km": total_km,
+            "total_road_length_km": total_km,
             "road_segments_count": len(valid_roads),
+            "road_count": len(valid_roads),
+            "total_road_area_km2": total_road_area_km2,
+            "total_built_area_km2": total_built_area_km2,
             "avg_detection_confidence": avg_conf,
             "building_avg_confidence": round(float(np.mean(bldg_confidences)) * 100, 1) if bldg_confidences else 0.0,
             "road_avg_confidence": round(float(np.mean(road_confidences)) * 100, 1) if road_confidences else 0.0,

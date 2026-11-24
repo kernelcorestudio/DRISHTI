@@ -82,14 +82,13 @@ impl KDBush {
         let mut kdbush = KDBush {
             ids: Vec::with_capacity(points.size_hint()),
             points: Vec::with_capacity(points.size_hint()),
-            node_size: node_size,
+            node_size: node_size.max(1),
         };
         points.visit_all(|id, x, y| {
             kdbush.points.push([x, y]);
             kdbush.ids.push(id);
         });
-        let size = kdbush.points.len();
-        kdbush.sort_kd(0, size - 1, 0);
+        kdbush.build_index();
         kdbush
     }
 
@@ -103,7 +102,7 @@ impl KDBush {
         KDBush {
             ids: Vec::with_capacity(size_hint),
             points: Vec::with_capacity(size_hint),
-            node_size: node_size,
+            node_size: node_size.max(1),
         }
     }
 

@@ -150,7 +150,10 @@ export function zoneBySceneId(
 
 export async function fetchSRPresets(): Promise<ISRPreset[]> {
     const res = await requestJson<{ status: string; presets: ISRPreset[] }>("/sr/presets", undefined, 5000);
-    return res.presets || [];
+    return (res.presets || []).map(p => ({
+        ...p,
+        name: p.name || p.title || p.id,
+    }));
 }
 
 export function fetchSRTile(presetId?: string, bbox?: number[]): Promise<any> {
@@ -159,7 +162,11 @@ export function fetchSRTile(presetId?: string, bbox?: number[]): Promise<any> {
         {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ preset_id: presetId, bbox }),
+            body: JSON.stringify({
+                preset_id: presetId,
+                aoi_id: presetId || "custom_aoi",
+                bbox,
+            }),
         },
         60000,
     );
@@ -172,6 +179,8 @@ export function runSuperResolution(params: {
     apply_sharpen?: boolean;
     use_tiling?: boolean;
 }): Promise<ISRResult> {
+    const samples = params.mc_samples || 8;
+    const sharpen = Boolean(params.apply_sharpen);
     return requestJson<ISRResult>(
         "/sr/superresolve",
         {
@@ -180,8 +189,10 @@ export function runSuperResolution(params: {
             body: JSON.stringify({
                 model_name: params.model_name || "hat",
                 scale_factor: params.scale_factor || 4,
-                mc_samples: params.mc_samples || 8,
-                apply_realesrgan_sharpen: params.apply_sharpen || false,
+                num_mc_samples: samples,
+                mc_samples: samples,
+                apply_realesrgan_sharpen: sharpen,
+                apply_unsharp: sharpen,
                 use_tiling: params.use_tiling !== false,
             }),
         },
@@ -226,9 +237,13 @@ export function registerTileOnChain(tileId?: string): Promise<any> {
         {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ tile_id: tileId }),
+            body: JSON.stringify({ tile_id: tileId || null }),
         },
         15000,
     );
+}
+
+export function srDownloadUrl(itemType: "geotiff" | "sr" | "geojson" | "confidence" | "lr"): string {
+    return `${API_BASE}/sr/download/${encodeURIComponent(itemType)}`;
 }
 

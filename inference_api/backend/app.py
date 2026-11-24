@@ -22,7 +22,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -30,8 +30,10 @@ app.add_middleware(
 # Register API endpoints
 app.include_router(api_router)
 
-# Mount frontend static directory
+# Mount frontend static directory (supports legacy /frontend or Vue /app/dist)
 frontend_dir = BASE_DIR / "frontend"
+if not frontend_dir.exists():
+    frontend_dir = BASE_DIR / "app" / "dist"
 if frontend_dir.exists():
     app.mount("/static", StaticFiles(directory=str(frontend_dir)), name="static")
 

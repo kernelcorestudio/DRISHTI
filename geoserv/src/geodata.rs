@@ -3,12 +3,10 @@
  * Copyright (c) 2022 SilentByte <https://silentbyte.com/>
  */
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
-
-use glob::glob;
 
 use crate::api::SharedState;
 use crate::kdbush::KDBush;
@@ -41,12 +39,17 @@ impl GeoIndex {
         sw_lng: f64,
         limit: usize,
     ) -> Vec<&geojson::Feature> {
-        let mut unique_features = HashMap::new();
+        let min_lat = sw_lat.min(ne_lat);
+        let max_lat = sw_lat.max(ne_lat);
+        let min_lng = sw_lng.min(ne_lng);
+        let max_lng = sw_lng.max(ne_lng);
+
+        let mut unique_features = BTreeMap::new();
         self.index
-            .range_with_predicate(sw_lat, sw_lng, ne_lat, ne_lng, |id| {
-                unique_features
-                    .entry(id)
-                    .or_insert(self.data.get(&id).unwrap());
+            .range_with_predicate(min_lat, min_lng, max_lat, max_lng, |id| {
+                if let Some(feature) = self.data.get(&id) {
+                    unique_features.entry(id).or_insert(feature);
+                }
 
                 unique_features.len() < limit
             });
@@ -89,29 +92,36 @@ impl GeoIndexBuilder {
         id
     }
 
-    fn add_bbox_points(&mut self, id: usize, bbox: &geojson::Bbox) {
-        let mut center = (0f64, 0f64);
-        let mut point_counter = 0;
+    fn add_bbox_points(&mut self, id: usize, bbox: &geojson::Bbox) -> anyhow::Result<()> {
+        let (min_lng, min_lat, max_lng, max_lat) = match bbox.len() {
+            4 => (bbox[0], bbox[1], bbox[2], bbox[3]),
+            6 => (bbox[0], bbox[1], bbox[3], bbox[4]),
+            other => anyhow::bail!("GeoJSON bbox has unexpected length {}", other),
+        };
 
-        for point in bbox.chunks_exact(2) {
-            self.geo_index.index.add_point(id, point[1], point[0]);
-
-            center.0 += point[1];
-            center.1 += point[0];
-            point_counter += 1;
+        for (lat, lng) in [
+            (min_lat, min_lng),
+            (min_lat, max_lng),
+            (max_lat, max_lng),
+            (max_lat, min_lng),
+        ] {
+            self.geo_index.index.add_point(id, lat, lng);
         }
 
-        if point_counter > 0 {
-            self.geo_index.heatmap.push((
-                center.0 / point_counter as f64,
-                center.1 / point_counter as f64,
-            ));
-        }
+        self.geo_index.heatmap.push((
+            (min_lat + max_lat) / 2.0,
+            (min_lng + max_lng) / 2.0,
+        ));
+        Ok(())
     }
 
-    fn add_point_points(&mut self, id: usize, point: &geojson::PointType) {
+    fn add_point_points(&mut self, id: usize, point: &geojson::PointType) -> anyhow::Result<()> {
+        if point.len() < 2 {
+            anyhow::bail!("Point geometry missing coordinates");
+        }
         self.geo_index.index.add_point(id, point[1], point[0]);
         self.geo_index.heatmap.push((point[1], point[0]));
+        Ok(())
     }
 
     pub fn add_features_from_file(mut self, path: &Path) -> anyhow::Result<Self> {
@@ -128,10 +138,13 @@ impl GeoIndexBuilder {
             let id = self.generate_id();
 
             if let Some(bbox) = &feature.bbox {
-                self.add_bbox_points(id, &bbox);
+                self.add_bbox_points(id, bbox)?;
             } else {
-                match &feature.geometry.as_ref().unwrap().value {
-                    geojson::Value::Point(point) => self.add_point_points(id, &point),
+                let geom = feature.geometry.as_ref().ok_or_else(|| {
+                    anyhow::anyhow!("{} contains a feature without geometry or bbox", path.display())
+                })?;
+                match &geom.value {
+                    geojson::Value::Point(point) => self.add_point_points(id, point)?,
                     _ => anyhow::bail!("{} contains an unsupported feature type", path.display()),
                 };
             }
@@ -152,35 +165,37 @@ impl GeoIndexBuilder {
 pub fn build_geo_indexes_from_directory_structure(
     data_dir: &str,
 ) -> anyhow::Result<HashMap<(String, String), GeoIndex>> {
-    let pattern = Path::new(data_dir).join("*/*.geojson");
-    let pattern = pattern
-        .to_str()
-        .ok_or(anyhow::anyhow!("Failed to expand glob pattern"))?
-        .to_string();
+    let root = Path::new(data_dir);
+    if !root.exists() {
+        anyhow::bail!("Data directory does not exist: {}", root.display());
+    }
 
     let mut geo_indexes = HashMap::new();
 
-    for entry in glob(&pattern)? {
-        let entry = entry?;
-        let path = entry.as_path();
+    for group_entry in std::fs::read_dir(root)? {
+        let group_entry = group_entry?;
+        let group_path = group_entry.path();
+        if !group_path.is_dir() {
+            continue;
+        }
+        let group = group_entry.file_name().to_string_lossy().into_owned();
 
-        log::info!("Parsing {}", path.display());
+        for file_entry in std::fs::read_dir(&group_path)? {
+            let file_entry = file_entry?;
+            let path = file_entry.path();
+            if !path.is_file() || path.extension().and_then(|s| s.to_str()) != Some("geojson") {
+                continue;
+            }
+            let Some(name) = path.file_stem().and_then(|s| s.to_str()).map(str::to_owned) else {
+                continue;
+            };
 
-        let group = path
-            .parent()
-            .unwrap()
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_owned();
-
-        let name = path.file_stem().unwrap().to_str().unwrap().to_owned();
-
-        geo_indexes.insert(
-            (group, name),
-            GeoIndexBuilder::new().add_features_from_file(path)?.build(),
-        );
+            log::info!("Parsing {}", path.display());
+            geo_indexes.insert(
+                (group.clone(), name),
+                GeoIndexBuilder::new().add_features_from_file(&path)?.build(),
+            );
+        }
     }
 
     Ok(geo_indexes)

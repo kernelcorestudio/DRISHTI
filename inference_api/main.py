@@ -33,15 +33,27 @@ import json
 import logging
 import os
 import re
+import shutil
 import sys
 import uuid
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import APIRouter, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
+
+PACKAGE_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = PACKAGE_DIR.parent
+if str(PACKAGE_DIR) not in sys.path:
+    sys.path.insert(0, str(PACKAGE_DIR))
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(PROJECT_DIR / ".env")
+except ImportError:
+    pass
 
 from jobs import Job, JobQueue, JobQueueFull
 
@@ -51,27 +63,38 @@ logging.basicConfig(
 )
 logger = logging.getLogger("inference_api")
 
-PACKAGE_DIR = Path(__file__).resolve().parent
-PROJECT_DIR = PACKAGE_DIR.parent
-
 ALLOWED_SUFFIXES = {".tif", ".tiff", ".gtiff"}
+TIFF_MAGIC_HEADERS = (b"II*\x00", b"MM\x00*", b"II+\x00", b"MM\x00+")
+WINDOWS_RESERVED_ZONE_NAMES = {
+    "con", "prn", "aux", "nul",
+    *(f"com{i}" for i in range(1, 10)),
+    *(f"lpt{i}" for i in range(1, 10)),
+}
 ZONE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 CHUNK_SIZE = 1 << 20
 DEMO_STRUCTURES = 168
 
 
+def _resolve_dir_env(var_name: str, default: Path, anchor: Path) -> Path:
+    raw = os.environ.get(var_name, "").strip()
+    if not raw:
+        return default.resolve()
+    candidate = Path(raw)
+    if not candidate.is_absolute():
+        candidate = anchor / candidate
+    return candidate.resolve()
+
+
 class Settings:
     def __init__(self) -> None:
         self.mode = os.environ.get("RAHAT_INFER_MODE", "real").strip().lower()
-        self.data_dir = Path(
-            os.environ.get("RAHAT_DATA_DIR", str(PROJECT_DIR / "geoserv" / "test_data"))
-        ).resolve()
-        self.work_dir = Path(os.environ.get("RAHAT_WORK_DIR", str(PACKAGE_DIR / "work"))).resolve()
-        self.model_dir = Path(os.environ.get("RAHAT_MODEL_DIR", str(PACKAGE_DIR / "models"))).resolve()
+        self.data_dir = _resolve_dir_env("RAHAT_DATA_DIR", PROJECT_DIR / "geoserv" / "test_data", PROJECT_DIR)
+        self.work_dir = _resolve_dir_env("RAHAT_WORK_DIR", PACKAGE_DIR / "work", PACKAGE_DIR)
+        self.model_dir = _resolve_dir_env("RAHAT_MODEL_DIR", PACKAGE_DIR / "models", PACKAGE_DIR)
         self.geoserv_url = os.environ.get("RAHAT_GEOSERV_URL", "http://127.0.0.1:8088").rstrip("/")
         self.device = os.environ.get("RAHAT_DEVICE", "").strip()
-        self.max_upload_bytes = int(float(os.environ.get("RAHAT_MAX_UPLOAD_MB", "512")) * 1024 * 1024)
-        self.max_jobs = int(os.environ.get("RAHAT_MAX_JOBS", "4"))
+        self.max_upload_bytes = max(1, int(float(os.environ.get("RAHAT_MAX_UPLOAD_MB", "512")) * 1024 * 1024))
+        self.max_jobs = max(1, int(os.environ.get("RAHAT_MAX_JOBS", "4")))
         # Polygons smaller than this (in 384-space mask pixels) are treated as speckle.
         # 20 is the measured optimum against xBD ground truth; see infer.DEFAULT_MIN_AREA.
         self.min_area = float(os.environ.get("RAHAT_MIN_AREA", "20"))
@@ -108,10 +131,12 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+core_router = APIRouter()
 
 # Super-Resolution, Spectral Analysis & Blockchain Provenance (NETRA Integration)
 try:
@@ -159,12 +184,15 @@ def load_infer():
 
 def save_upload(upload: UploadFile, destination: Path, max_bytes: int) -> int:
     total = 0
+    header = b""
     destination.parent.mkdir(parents=True, exist_ok=True)
     with open(destination, "wb") as output:
         while True:
             chunk = upload.file.read(CHUNK_SIZE)
             if not chunk:
                 break
+            if len(header) < 4:
+                header += chunk[: 4 - len(header)]
             total += len(chunk)
             if total > max_bytes:
                 output.close()
@@ -180,6 +208,12 @@ def save_upload(upload: UploadFile, destination: Path, max_bytes: int) -> int:
     if total == 0:
         destination.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail=f"{upload.filename} is empty")
+    if header not in TIFF_MAGIC_HEADERS:
+        destination.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=400,
+            detail=f"{upload.filename} does not have a valid TIFF header",
+        )
 
     return total
 
@@ -193,13 +227,22 @@ def validate_upload(upload: UploadFile) -> None:
         )
 
 
-def run_demo_inference(infer, job: Job, before_tile: Path) -> None:
-    """Writes synthetic detections anchored on the uploaded tile's georeference."""
+def run_demo_inference(infer, job: Job, before_tile: Path, after_tile: Path) -> None:
+    """Writes synthetic detections anchored inside the uploaded tile's georeference."""
     transform = infer.GeoTransform.from_geotiff(before_tile)
+    infer.GeoTransform.from_geotiff(after_tile)
+
+    from PIL import Image
+    with Image.open(before_tile) as img:
+        width, height = img.size
+
+    # Place the 12x14 synthetic grid starting near 15% inset from top-left so polygons stay inside the tile
+    start_lng = transform.x_offset + transform.x_scale * width * 0.15
+    start_lat = transform.y_offset + transform.y_scale * height * 0.85
 
     features = infer.demo_features(
-        center_lat=transform.y_offset,
-        center_lng=transform.x_offset,
+        center_lat=start_lat,
+        center_lng=start_lng,
         count=DEMO_STRUCTURES,
         zone=job.zone_id,
     )
@@ -248,7 +291,7 @@ def execute_job(job: Job, before_tile: Path, after_tile: Path) -> None:
     infer = load_infer()
 
     if settings.mode == "demo":
-        run_demo_inference(infer, job, before_tile)
+        run_demo_inference(infer, job, before_tile, after_tile)
     else:
         run_real_inference(infer, job, before_tile, after_tile)
 
@@ -278,7 +321,7 @@ def read_root():
     }
 
 
-@app.get("/health")
+@core_router.get("/health")
 def health():
     missing = [] if settings.mode == "demo" else settings.missing_models()
     reachable = True
@@ -380,9 +423,13 @@ def zone_inventory() -> List[dict]:
             path = zone_dir / f"{layer}.geojson"
             if not path.exists():
                 continue
-            features = (read_json_file(path) or {}).get("features") or []
+            parsed = read_json_file(path)
+            features = parsed.get("features") if isinstance(parsed, dict) else None
+            features = features if isinstance(features, list) else []
             severity = {}
             for feature in features:
+                if not isinstance(feature, dict):
+                    continue
                 label = (feature.get("properties") or {}).get("severity")
                 if label:
                     severity[label] = severity.get(label, 0) + 1
@@ -410,13 +457,16 @@ def imagery_inventory() -> List[dict]:
                 by_zoom[zoom] = by_zoom.get(zoom, 0) + 1
             roles[role_dir.name] = {
                 "tiles": sum(by_zoom.values()),
-                "by_zoom": {zoom: by_zoom[zoom] for zoom in sorted(by_zoom, key=int)},
+                "by_zoom": {
+                    zoom: by_zoom[zoom]
+                    for zoom in sorted(by_zoom, key=lambda z: (0, int(z)) if z.isdigit() else (1, z))
+                },
             }
         inventories.append({"zone_id": zone_dir.name, "roles": roles})
     return inventories
 
 
-@app.get("/diagnostics")
+@core_router.get("/diagnostics")
 def diagnostics():
     """Everything the dashboard shows, in one read-only call."""
     return {
@@ -433,19 +483,19 @@ def diagnostics():
     }
 
 
-@app.post("/predict/disaster", status_code=202, response_model=JobResponse)
+@core_router.post("/predict/disaster", status_code=202, response_model=JobResponse)
 def predict_disaster(
     zone_id: str,
     before_image: UploadFile = File(...),
     after_image: UploadFile = File(...),
 ):
     """Queues inference for one tile pair. Returns 202 with the job to poll."""
-    if not ZONE_ID_PATTERN.match(zone_id):
+    if not ZONE_ID_PATTERN.match(zone_id) or zone_id.split(".")[0].lower() in WINDOWS_RESERVED_ZONE_NAMES:
         raise HTTPException(
             status_code=400,
             detail=(
                 "zone_id must be 1-64 characters of lowercase letters, digits, '.', '_' or '-', "
-                "starting with a letter or digit (it becomes a directory name)"
+                "starting with a letter or digit and not a reserved OS device name"
             ),
         )
 
@@ -469,16 +519,20 @@ def predict_disaster(
     before_tile = job_dir / "before.tif"
     after_tile = job_dir / "after.tif"
 
-    save_upload(before_image, before_tile, settings.max_upload_bytes)
-    save_upload(after_image, after_tile, settings.max_upload_bytes)
-
-    def worker(job: Job) -> None:
-        execute_job(job, before_tile, after_tile)
-
     try:
-        job = queue.submit(zone_id, worker)
-    except JobQueueFull as error:
-        raise HTTPException(status_code=429, detail=str(error))
+        save_upload(before_image, before_tile, settings.max_upload_bytes)
+        save_upload(after_image, after_tile, settings.max_upload_bytes)
+
+        def worker(job: Job) -> None:
+            execute_job(job, before_tile, after_tile)
+
+        try:
+            job = queue.submit(zone_id, worker)
+        except JobQueueFull as error:
+            raise HTTPException(status_code=429, detail=str(error))
+    except Exception:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise
 
     logger.info(
         "queued job %s for zone %s (%s mode, %.1f KB before / %.1f KB after)",
@@ -488,17 +542,21 @@ def predict_disaster(
     return JobResponse(**job.to_dict())
 
 
-@app.get("/jobs", response_model=List[JobResponse])
+@core_router.get("/jobs", response_model=List[JobResponse])
 def list_jobs(limit: int = 20):
-    return [JobResponse(**job.to_dict()) for job in queue.list(limit=max(1, min(limit, 100)))]
+    return [JobResponse(**data) for data in queue.list_snapshots(limit=max(1, min(limit, 100)))]
 
 
-@app.get("/jobs/{job_id}", response_model=JobResponse)
+@core_router.get("/jobs/{job_id}", response_model=JobResponse)
 def get_job(job_id: str):
-    job = queue.get(job_id)
-    if job is None:
+    data = queue.snapshot(job_id)
+    if data is None:
         raise HTTPException(status_code=404, detail=f"no such job: {job_id}")
-    return JobResponse(**job.to_dict())
+    return JobResponse(**data)
+
+
+app.include_router(core_router)
+app.include_router(core_router, prefix="/api", include_in_schema=False)
 
 
 if __name__ == "__main__":

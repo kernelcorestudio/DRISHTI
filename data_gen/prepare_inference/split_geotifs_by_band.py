@@ -1,6 +1,6 @@
 from solaris.tile.raster_tile import RasterTiler
-import gdal
-from gdalconst import GA_ReadOnly
+from osgeo import gdal
+from osgeo.gdalconst import GA_ReadOnly
 from typing_extensions import TypedDict
 from shapely.geometry import box
 import matplotlib.pyplot as plt
@@ -23,7 +23,7 @@ def split_geotiff_to_components(tifs: List[Path], path_to_dump: Path):
     for file in tifs:
         with rasterio.open(file) as src:
             profile = src.profile.copy()
-            profile['photometric'] = "RGB"
+            profile['photometric'] = "minisblack"
             img = src.read()
             profile['count'] = 1
             for i in range(img.shape[0]):
@@ -32,15 +32,16 @@ def split_geotiff_to_components(tifs: List[Path], path_to_dump: Path):
                     dst.write(img[i], 1)
 
 def do_tilesover_ops(in_dir: Path, out_dir: Path) -> Path:
-    """:returns location of sqllite db"""
-    # Ok so this is kind of strange, and I've never seen it before
-    # The underlying function here doesn't seem to be playing nice becuase of somethign click related..
-    # I dont understand why, so instead I'm going to cheat and run it via clirunner.
+    """:returns location of output directory / terracotta sqlite db"""
     runner = CliRunner()
     print("Optimising your rasters, this may take a while")
-    runner.invoke(optimize_rasters,
-                  args=['--output-folder', out_dir.__str__(), '--reproject','--nproc',8,
-                        '--overwrite', (in_dir / "*.tif").__str__()])
+    result = runner.invoke(
+        optimize_rasters,
+        args=['--output-folder', str(out_dir), '--reproject', '--nproc', '8', '--overwrite', str(in_dir / "*.tif")],
+    )
+    if result.exit_code != 0:
+        raise RuntimeError(f"optimize_rasters failed: {result.output}")
+    return out_dir
 
 if __name__ == "__main__":
     base_path = Path().resolve()

@@ -1,6 +1,7 @@
 fastapi==0.103.1
 uvicorn==0.23.2
-pydantic==2.3.0
+pydantic>=2.3.0
+timm>=1.0.0
 # FastAPI needs this to parse the multipart tile uploads; main.py raises without it.
 python-multipart==0.0.20
 # Stage 2 is exported from fastai 2.8.12 on Kaggle; 2.7.x cannot unpickle it.

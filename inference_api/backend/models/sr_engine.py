@@ -21,6 +21,7 @@ class SREngine:
         self.model = None
         self.ort_session = None
         self.is_onnx = False
+        self.onnx_input_bands = 4
         self.checkpoint_path = None
         self.checkpoint_meta = {}
         self._init_model(weights_path)
@@ -32,6 +33,33 @@ class SREngine:
         self.tiler = Tiler(patch_size=64, stride=48, scale_factor=scale_factor)
         self._init_model()
 
+    def _select_onnx_providers(self, torch_module) -> list[str]:
+        import onnxruntime as ort
+        providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if torch_module.cuda.is_available() else ["CPUExecutionProvider"]
+        available_providers = ort.get_available_providers()
+        return [p for p in providers if p in available_providers] or ["CPUExecutionProvider"]
+
+    def _find_checkpoint(self, weights_dir: Path, weights_path: str | None) -> Path | None:
+        if weights_path and Path(weights_path).exists():
+            return Path(weights_path)
+        clean_name = self.model_name.replace("_", "")
+        candidates = [
+            weights_dir / f"{self.model_name}_x{self.scale_factor}_sentinel2.pt",
+            weights_dir / f"{clean_name}_x{self.scale_factor}_sentinel2.pt",
+            weights_dir / f"{clean_name}_x{self.scale_factor}_satellite.pt",
+            weights_dir / f"{self.model_name}_x{self.scale_factor}_satellite.pt",
+            weights_dir / f"{self.model_name}_x{self.scale_factor}_worldstrat.pt",
+            weights_dir / f"{clean_name}_x{self.scale_factor}_worldstrat.pt",
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        for pattern in (f"*{self.model_name}*.pt", f"*{clean_name}*.pt", f"*{self.model_name}*.pth", f"*{clean_name}*.pth"):
+            matches = sorted(weights_dir.glob(pattern))
+            if matches:
+                return matches[0]
+        return None
+
     def _init_model(self, weights_path: str = None):
         try:
             import torch
@@ -39,163 +67,186 @@ class SREngine:
             weights_dir = BASE_DIR / "weights"
             weights_dir.mkdir(parents=True, exist_ok=True)
             self.is_onnx = False
+            self.onnx_input_bands = 4
             self.ort_session = None
             self.model = None
+            self.checkpoint_path = None
+            self.checkpoint_meta = {}
 
             # -------------------------------------------------------------
-            # 1. PRIMARY PRODUCTION ENGINE: HAT (WorldStrat ONNX Engine)
+            # 1. PRIMARY PRODUCTION ENGINE: HAT / EVOLAND (WorldStrat ONNX)
             # -------------------------------------------------------------
             if self.model_name in ["hat", "evoland", "evoland_wsx4", "wsx4"]:
-                import onnxruntime as ort
-                onnx_file = weights_dir / "hat_worldstrat_x4.onnx"
-                if not onnx_file.exists():
-                    onnx_file = weights_dir / "wsx4_spatrad.onnx"
-                if not onnx_file.exists():
-                    repo_onnx = BASE_DIR / "evoland_repo" / "src" / "sentinel2_superresolution" / "models" / "wsx4_spatrad.onnx"
-                    if repo_onnx.exists():
-                        import shutil
-                        shutil.copy(repo_onnx, onnx_file)
+                try:
+                    import onnxruntime as ort
+                    if self.scale_factor == 2 and (weights_dir / "wsx2_spatrad.onnx").exists():
+                        onnx_file = weights_dir / "wsx2_spatrad.onnx"
+                        trained_scale = 2
+                    else:
+                        onnx_file = weights_dir / "hat_worldstrat_x4.onnx"
+                        if not onnx_file.exists():
+                            onnx_file = weights_dir / "wsx4_spatrad.onnx"
+                        if not onnx_file.exists():
+                            repo_onnx = BASE_DIR / "evoland_repo" / "src" / "sentinel2_superresolution" / "models" / "wsx4_spatrad.onnx"
+                            if repo_onnx.exists():
+                                import shutil
+                                shutil.copy(repo_onnx, onnx_file)
+                        trained_scale = 4
 
-                providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if torch.cuda.is_available() else ["CPUExecutionProvider"]
-                available_providers = ort.get_available_providers()
-                providers = [p for p in providers if p in available_providers] or ["CPUExecutionProvider"]
-
-                self.ort_session = ort.InferenceSession(str(onnx_file), providers=providers)
-                self.is_onnx = True
-                self.checkpoint_path = str(onnx_file)
-                self.checkpoint_meta = {
-                    "checkpoint_file": onnx_file.name,
-                    "checkpoint_source": "WorldStrat High-Resolution Satellite Benchmark",
-                    "trained_scale": 4,
-                    "model_name": "HAT (Hybrid Attention Transformer — Production Engine)" if self.model_name == "hat" else "EVOLAND WorldStrat",
-                    "architecture": "Hybrid Attention Transformer (ONNX Engine)" if self.model_name == "hat" else "EVOLAND ESRGAN",
-                    "training_dataset": "WorldStrat (Sentinel-2 L2A paired with SPOT 6/7 1.5m)",
-                    "input_resolution": "10m GSD",
-                    "output_resolution": "2.5m GSD (<4m target)",
-                    "bands": ["B02", "B03", "B04", "B08"],
-                    "margin": 16
-                }
-                print("\n[SREngine] ================= CHECKPOINT LOADED =================")
-                print(f"[SREngine] Checkpoint File:   {self.checkpoint_meta['checkpoint_file']}")
-                print(f"[SREngine] Full File Path:    {self.checkpoint_path}")
-                print(f"[SREngine] Trained Scale:     {self.checkpoint_meta['trained_scale']}x (<4m / {10.0/self.scale_factor:.1f}m GSD)")
-                print(f"[SREngine] Model Type:        {self.checkpoint_meta['model_name']}")
-                print(f"[SREngine] Architecture:      {self.checkpoint_meta['architecture']}")
-                print(f"[SREngine] Provenance:        {self.checkpoint_meta['training_dataset']}")
-                print(f"[SREngine] Execution Engine:  ONNX Runtime ({self.device.upper()})")
-                print("[SREngine] ========================================================\n")
-                return
+                    if onnx_file.exists():
+                        providers = self._select_onnx_providers(torch)
+                        self.ort_session = ort.InferenceSession(str(onnx_file), providers=providers)
+                        self.is_onnx = True
+                        self.onnx_input_bands = 4
+                        self.scale_factor = trained_scale
+                        self.checkpoint_path = str(onnx_file)
+                        self.checkpoint_meta = {
+                            "checkpoint_file": onnx_file.name,
+                            "checkpoint_source": "WorldStrat High-Resolution Satellite Benchmark",
+                            "trained_scale": trained_scale,
+                            "model_name": "HAT (Hybrid Attention Transformer - Production Engine)" if self.model_name == "hat" else "EVOLAND WorldStrat",
+                            "architecture": "Hybrid Attention Transformer (ONNX Engine)" if self.model_name == "hat" else "EVOLAND ESRGAN",
+                            "training_dataset": "WorldStrat (Sentinel-2 L2A paired with SPOT 6/7 1.5m)",
+                            "input_resolution": "10m GSD",
+                            "output_resolution": f"{10.0 / trained_scale:.1f}m GSD",
+                            "bands": ["B02", "B03", "B04", "B08"],
+                            "margin": 16
+                        }
+                        print(f"\n[SREngine] ONNX Checkpoint Loaded: {onnx_file.name} ({self.device.upper()}, {trained_scale}x)")
+                        return
+                except Exception as onnx_err:
+                    print(f"[SREngine] ONNX load notice for '{self.model_name}': {onnx_err}. Falling back to PyTorch.")
 
             # -------------------------------------------------------------
-            # 2. CARN: EVOLAND Official CARN ONNX (or fallback pt)
+            # 2. CARN: 2x 10-band ONNX or 4x PyTorch WorldStrat checkpoint
             # -------------------------------------------------------------
             elif self.model_name in ["evoland_carn", "carn"]:
                 carn_onnx = weights_dir / "carn_3x3x64g4sw_bootstrap.onnx"
-                if carn_onnx.exists():
-                    import onnxruntime as ort
-                    providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if torch.cuda.is_available() else ["CPUExecutionProvider"]
-                    available_providers = ort.get_available_providers()
-                    providers = [p for p in providers if p in available_providers] or ["CPUExecutionProvider"]
-                    self.ort_session = ort.InferenceSession(str(carn_onnx), providers=providers)
-                    self.is_onnx = True
-                    self.checkpoint_path = str(carn_onnx)
-                    self.checkpoint_meta = {
-                        "checkpoint_file": carn_onnx.name,
-                        "checkpoint_source": EVOLAND_SOURCE_REPO,
-                        "trained_scale": 2,
-                        "model_name": "EVOLAND CARN (Official Pretrained)",
-                        "architecture": "Cascading Residual Network (ONNX Runtime)",
-                        "training_dataset": "Sen2Venµs (Sentinel-2 10-band)",
-                        "input_resolution": "10m GSD",
-                        "output_resolution": "5.0m GSD",
-                        "bands": ["B02", "B03", "B04", "B08", "B05", "B06", "B07", "B8A", "B11", "B12"]
-                    }
-                    print("\n[SREngine] ================= CHECKPOINT LOADED =================")
-                    print(f"[SREngine] Checkpoint File:   {self.checkpoint_meta['checkpoint_file']}")
-                    print(f"[SREngine] Checkpoint Source: {self.checkpoint_meta['checkpoint_source']}")
-                    print(f"[SREngine] Full File Path:    {self.checkpoint_path}")
-                    print(f"[SREngine] Execution Engine:  ONNX Runtime ({self.device.upper()})")
-                    print("[SREngine] ========================================================\n")
-                    return
+                if self.scale_factor == 2 and carn_onnx.exists():
+                    try:
+                        import onnxruntime as ort
+                        providers = self._select_onnx_providers(torch)
+                        self.ort_session = ort.InferenceSession(str(carn_onnx), providers=providers)
+                        self.is_onnx = True
+                        self.onnx_input_bands = 10
+                        self.checkpoint_path = str(carn_onnx)
+                        self.checkpoint_meta = {
+                            "checkpoint_file": carn_onnx.name,
+                            "checkpoint_source": EVOLAND_SOURCE_REPO,
+                            "trained_scale": 2,
+                            "model_name": "EVOLAND CARN (Official Pretrained 2x)",
+                            "architecture": "Cascading Residual Network (ONNX Runtime)",
+                            "training_dataset": "Sen2Venus (Sentinel-2 10-band)",
+                            "input_resolution": "10m GSD",
+                            "output_resolution": "5.0m GSD",
+                            "bands": ["B02", "B03", "B04", "B08", "B05", "B06", "B07", "B8A", "B11", "B12"]
+                        }
+                        print(f"\n[SREngine] ONNX Checkpoint Loaded: {carn_onnx.name} ({self.device.upper()}, 2x)")
+                        return
+                    except Exception as carn_err:
+                        print(f"[SREngine] CARN ONNX load notice: {carn_err}. Falling back to PyTorch checkpoint.")
+                weights_path = weights_path or str(weights_dir / "evoland_carn_x4_worldstrat.pt")
 
             # -------------------------------------------------------------
-            # 3. SECONDARY / EXPERIMENTAL PYTORCH MODELS
+            # 3. PYTORCH MODELS (HAT, LDSR-S2, Real-ESRGAN, SwinIR, SRM-Net)
             # -------------------------------------------------------------
             from backend.models.architectures.srm_net import SRMNet
             from backend.models.architectures.hat import HAT, ensure_hat_checkpoint
 
-            if self.model_name == "hat":
-                self.model = HAT(in_channels=3, out_channels=3, num_features=64, num_blocks=6, scale_factor=self.scale_factor, dropout_rate=0.15)
+            resolved_ckpt = self._find_checkpoint(weights_dir, weights_path)
+            if self.model_name in ["hat", "evoland", "evoland_wsx4", "wsx4"] and resolved_ckpt is None:
                 default_checkpoint = weights_dir / f"hat_x{self.scale_factor}_sentinel2.pt"
                 ensure_hat_checkpoint(default_checkpoint)
-            elif self.model_name in ["ldsr_s2", "ldsr", "opensr_model", "opensr"]:
-                from backend.models.architectures.ldsr_s2 import LDSRS2, LDSR_WEIGHTS_NAME
-                self.model = LDSRS2(scale_factor=self.scale_factor, sampling_steps=15, device=self.device)
-                default_checkpoint = weights_dir / LDSR_WEIGHTS_NAME
-                if not weights_path and default_checkpoint.exists():
-                    weights_path = str(default_checkpoint)
-            elif self.model_name in ["realesrgan", "rrdbnet", "real_esrgan"]:
-                from backend.models.architectures.rrdbnet import RRDBNet
-                self.model = RRDBNet(in_channels=3, out_channels=3, num_feat=64, num_blocks=23, num_grow_ch=32, scale_factor=self.scale_factor)
-                default_checkpoint = weights_dir / "RealESRGAN_x4plus.pth"
-                if not weights_path and default_checkpoint.exists():
-                    weights_path = str(default_checkpoint)
-            else:
-                self.model = SRMNet(in_channels=3, out_channels=3, scale_factor=self.scale_factor, dropout_rate=0.2)
+                resolved_ckpt = default_checkpoint
 
-            # Determine checkpoint path for PyTorch models
-            if not weights_path:
-                candidate = weights_dir / f"{self.model_name}_x{self.scale_factor}_sentinel2.pt"
-                if not candidate.exists():
-                    candidate = weights_dir / f"{self.model_name}_x{self.scale_factor}_worldstrat.pt"
-                if not candidate.exists():
-                    all_pts = list(weights_dir.glob(f"*{self.model_name}*.pt")) or list(weights_dir.glob(f"*{self.model_name}*.pth")) or list(weights_dir.glob("*.pt"))
-                    candidate = all_pts[0] if all_pts else None
-                weights_path = str(candidate) if candidate else None
-
-            if weights_path and Path(weights_path).exists():
-                self.checkpoint_path = str(weights_path)
-                checkpoint = torch.load(weights_path, map_location=self.device)
+            checkpoint = None
+            weights_dict = None
+            if resolved_ckpt and resolved_ckpt.exists():
+                checkpoint = torch.load(str(resolved_ckpt), map_location=self.device)
                 if isinstance(checkpoint, dict):
-                    if "params_ema" in checkpoint:
-                        weights_dict = checkpoint["params_ema"]
-                    elif "params" in checkpoint:
-                        weights_dict = checkpoint["params"]
-                    elif "state_dict" in checkpoint:
-                        weights_dict = checkpoint["state_dict"]
-                    else:
-                        weights_dict = checkpoint
+                    weights_dict = (
+                        checkpoint.get("params_ema")
+                        or checkpoint.get("params")
+                        or checkpoint.get("state_dict")
+                        or checkpoint
+                    )
                 else:
                     weights_dict = checkpoint
 
+            if self.model_name in ["hat", "evoland", "evoland_wsx4", "wsx4"]:
+                self.model = HAT(in_channels=3, out_channels=3, num_features=64, num_blocks=6, scale_factor=self.scale_factor, dropout_rate=0.15)
+            elif self.model_name in ["ldsr_s2", "ldsr", "opensr_model", "opensr"]:
+                from backend.models.architectures.ldsr_s2 import LDSRS2, LDSR_WEIGHTS_NAME
+                ldsr_ckpt = weights_dir / LDSR_WEIGHTS_NAME
+                self.model = LDSRS2(weights_path=ldsr_ckpt, scale_factor=self.scale_factor, sampling_steps=15, device=self.device)
+                if not resolved_ckpt and ldsr_ckpt.exists():
+                    resolved_ckpt = ldsr_ckpt
+            elif self.model_name in ["realesrgan", "rrdbnet", "real_esrgan"]:
+                from backend.models.architectures.rrdbnet import RRDBNet
+                self.model = RRDBNet(in_channels=3, out_channels=3, num_feat=64, num_blocks=23, num_grow_ch=32, scale_factor=self.scale_factor)
+            elif self.model_name == "swinir":
+                is_swin_keys = isinstance(weights_dict, dict) and any(
+                    str(k).startswith(("patch_embed", "layers.")) for k in weights_dict.keys()
+                )
+                if is_swin_keys or weights_dict is None:
+                    from backend.models.architectures.network_swinir import SwinIR
+                    self.model = SwinIR(
+                        upscale=self.scale_factor,
+                        in_chans=3,
+                        img_size=64,
+                        window_size=8,
+                        img_range=1.0,
+                        depths=[6, 6, 6, 6],
+                        embed_dim=60,
+                        num_heads=[6, 6, 6, 6],
+                        mlp_ratio=2,
+                        upsampler="pixelshuffledirect",
+                        resi_connection="1conv",
+                    )
+                else:
+                    # Handle SwinIR export saved with SRMNet residual attention state dict keys
+                    self.model = SRMNet(in_channels=3, out_channels=3, scale_factor=self.scale_factor, dropout_rate=0.2)
+            else:
+                self.model = SRMNet(in_channels=3, out_channels=3, scale_factor=self.scale_factor, dropout_rate=0.2)
+
+            if resolved_ckpt and resolved_ckpt.exists() and weights_dict is not None:
+                self.checkpoint_path = str(resolved_ckpt)
                 from backend.models.architectures.ldsr_s2 import LDSRS2
                 if not isinstance(self.model, LDSRS2):
                     self.model.load_state_dict(weights_dict, strict=False)
-                is_realesrgan = "realesrgan" in self.model_name or "realesrgan" in Path(weights_path).name.lower()
+                ckpt_name = resolved_ckpt.name.lower()
+                is_realesrgan = "realesrgan" in self.model_name or "realesrgan" in ckpt_name
                 is_ldsr = "ldsr" in self.model_name or "opensr" in self.model_name
                 is_hat = "hat" in self.model_name
+                default_label = (
+                    "HAT (Experimental Custom)" if is_hat else
+                    "LDSR-S2" if is_ldsr else
+                    "Real-ESRGAN" if is_realesrgan else
+                    checkpoint.get("model_name", self.model_name) if isinstance(checkpoint, dict) else self.model_name
+                )
                 self.checkpoint_meta = {
-                    "checkpoint_file": Path(weights_path).name,
-                    "checkpoint_source": "Local Experimental Checkpoint (PyTorch)" if not is_realesrgan else "Real-ESRGAN Official Release",
+                    "checkpoint_file": resolved_ckpt.name,
+                    "checkpoint_source": "Real-ESRGAN Official Release" if is_realesrgan else "Local PyTorch Checkpoint",
                     "trained_scale": self.scale_factor,
-                    "model_name": "HAT (Experimental Custom)" if is_hat else ("LDSR-S2" if is_ldsr else ("Real-ESRGAN" if is_realesrgan else checkpoint.get("model_name", self.model_name) if isinstance(checkpoint, dict) else self.model_name)),
+                    "model_name": default_label,
                     "architecture": self.model.__class__.__name__,
-                    "training_dataset": "ESA OpenSR Latent Diffusion (10m Sentinel-2)" if is_ldsr else ("Real-ESRGAN Synthetic Degradation Benchmark" if is_realesrgan else (checkpoint.get("training_dataset", "WorldStrat Sentinel-2 ↔ SPOT 1.5m") if isinstance(checkpoint, dict) else "WorldStrat Paired Reference")),
+                    "training_dataset": (
+                        "ESA OpenSR Latent Diffusion (10m Sentinel-2)" if is_ldsr else
+                        "Real-ESRGAN Synthetic Degradation Benchmark" if is_realesrgan else
+                        (checkpoint.get("training_dataset", "WorldStrat Sentinel-2 <-> SPOT 1.5m") if isinstance(checkpoint, dict) else "WorldStrat Paired Reference")
+                    ),
                     "input_resolution": "10m GSD",
-                    "output_resolution": f"{10.0/self.scale_factor:.1f}m GSD"
+                    "output_resolution": f"{10.0 / self.scale_factor:.1f}m GSD"
                 }
-                print(f"\n[SREngine] ================= CHECKPOINT LOADED =================")
-                print(f"[SREngine] Checkpoint File:   {self.checkpoint_meta['checkpoint_file']}")
-                print(f"[SREngine] Checkpoint Source: {self.checkpoint_meta.get('checkpoint_source')}")
-                print(f"[SREngine] Full File Path:    {self.checkpoint_path}")
-                print(f"[SREngine] Trained Scale:     {self.checkpoint_meta.get('trained_scale')}x (<4m / {10.0/self.scale_factor:.1f}m GSD)")
-                print(f"[SREngine] Model Type:        {self.checkpoint_meta.get('model_name')}")
-                print(f"[SREngine] Architecture:      {self.checkpoint_meta.get('architecture')}")
-                print(f"[SREngine] Provenance:        {self.checkpoint_meta.get('training_dataset')}")
-                print(f"[SREngine] Device:            {self.device.upper()}")
-                print(f"[SREngine] ========================================================\n")
+                print(f"\n[SREngine] PyTorch Checkpoint Loaded: {resolved_ckpt.name} ({self.model.__class__.__name__}, {self.device.upper()})")
             else:
-                print(f"[SREngine] No external checkpoint specified. Initialized base {self.model.__class__.__name__} weights on {self.device.upper()}.")
+                self.checkpoint_meta = {
+                    "checkpoint_file": "Uninitialized base weights",
+                    "trained_scale": self.scale_factor,
+                    "model_name": self.model_name.upper(),
+                    "architecture": self.model.__class__.__name__,
+                }
+                print(f"[SREngine] No external checkpoint found. Initialized {self.model.__class__.__name__} on {self.device.upper()}.")
 
             self.model.to(self.device)
             self.model.eval()
@@ -206,57 +257,74 @@ class SREngine:
     def apply_unsharp_mask(self, sr_image: np.ndarray, radius: float = 1.0, amount: float = 1.2) -> np.ndarray:
         """
         Applies light unsharp mask edge enhancement (skimage.filters.unsharp_mask).
+        Accepts uint8 [0, 255] or float [0, 1] and always returns float32 [0.0, 1.0].
         """
         try:
             from skimage.filters import unsharp_mask
-            enhanced = unsharp_mask(sr_image.astype(np.float32), radius=radius, amount=amount, preserve_range=True)
-            clipped = np.clip(enhanced, 0.0, 1.0).astype(np.float32)
-            return clipped
+            arr = sr_image.astype(np.float32)
+            if sr_image.dtype == np.uint8 or float(np.nanmax(arr)) > 2.0:
+                arr = arr / 255.0
+            arr = np.clip(arr, 0.0, 1.0)
+            channel_axis = (arr.ndim - 1) if arr.ndim == 3 else None
+            enhanced = unsharp_mask(arr, radius=radius, amount=amount, preserve_range=True, channel_axis=channel_axis)
+            return np.clip(enhanced, 0.0, 1.0).astype(np.float32)
         except Exception as e:
             print(f"[SREngine] Unsharp mask exception: {e}. Returning unenhanced SR.")
-            return sr_image
+            arr = sr_image.astype(np.float32)
+            if sr_image.dtype == np.uint8 or float(np.nanmax(arr)) > 2.0:
+                arr = arr / 255.0
+            return np.clip(arr, 0.0, 1.0).astype(np.float32)
 
-    def _prepare_evoland_4band_input(self, lr_image: np.ndarray, lr_raw: np.ndarray = None) -> np.ndarray:
+    def _prepare_evoland_input(self, lr_image: np.ndarray, lr_raw: np.ndarray = None) -> np.ndarray:
         """
-        Prepares 4-band [B02, B03, B04, B08] array scaled to native Sentinel-2 reflectance DN [0, 10000].
-        Handles 10-band, 4-band, and 3-band RGB inputs seamlessly.
+        Prepares 4-band or 10-band array scaled to Sentinel-2 reflectance DN [0, 10000].
         """
+        bands_needed = getattr(self, "onnx_input_bands", 4)
         source = lr_raw if (lr_raw is not None and lr_raw.shape[:2] == lr_image.shape[:2]) else lr_image
 
         if source.ndim == 3 and source.shape[2] >= 4:
-            # CDSE standard order: [B04 (Red), B03 (Green), B02 (Blue), B08 (NIR)]
             b4 = source[:, :, 0]
             b3 = source[:, :, 1]
             b2 = source[:, :, 2]
             b8 = source[:, :, 3]
         else:
-            # 3-channel input: [B04 (Red), B03 (Green), B02 (Blue)]
             b4 = lr_image[:, :, 0]
             b3 = lr_image[:, :, 1]
             b2 = lr_image[:, :, 2]
-            # Synthesize proxy NIR band based on vegetation reflectance
             b8 = np.clip(b3 * 1.25 + b4 * 0.15, 0.0, 1.0)
 
-        # Scale to [0, 10000] DN if values are in [0, 1] range
-        if np.nanmax(b4) <= 2.0:
-            scale = 10000.0
+        scale = 10000.0 if float(np.nanmax(b4)) <= 2.0 else 1.0
+        if bands_needed == 10:
+            if source.ndim == 3 and source.shape[2] >= 10:
+                b5, b6, b7, b8a, b11, b12 = (
+                    source[:, :, 4], source[:, :, 5], source[:, :, 6],
+                    source[:, :, 7], source[:, :, 8], source[:, :, 9],
+                )
+            else:
+                b5 = np.clip(0.50 * b4 + 0.50 * b8, 0.0, 1.0)
+                b6 = np.clip(0.30 * b4 + 0.70 * b8, 0.0, 1.0)
+                b7 = np.clip(0.10 * b4 + 0.90 * b8, 0.0, 1.0)
+                b8a = b8
+                b11 = np.clip(0.65 * b4 + 0.35 * b8, 0.0, 1.0)
+                b12 = np.clip(0.80 * b4 + 0.20 * b8, 0.0, 1.0)
+            stack = [b2, b3, b4, b8, b5, b6, b7, b8a, b11, b12]
         else:
-            scale = 1.0
+            stack = [b2, b3, b4, b8]
 
-        # Model expects [B02 (Blue), B03 (Green), B04 (Red), B08 (NIR)]
-        input_4b = np.stack([b2, b3, b4, b8], axis=0).astype(np.float32) * scale
-        return input_4b
+        return np.stack(stack, axis=0).astype(np.float32) * scale
 
-    def _infer_evoland_onnx(self, input_4b: np.ndarray, pad_lr: int = 16) -> np.ndarray:
+    def _infer_evoland_onnx(self, input_bands: np.ndarray, pad_lr: int = 16) -> np.ndarray:
         """
         Runs single inference on EVOLAND ONNX session with margin padding to eliminate edge artifacts.
         Returns 3-channel RGB [0, 1] numpy array.
         """
-        padded = np.pad(input_4b, ((0, 0), (pad_lr, pad_lr), (pad_lr, pad_lr)), mode='reflect')[None, ...]
+        _, H, W = input_bands.shape
+        safe_pad = min(pad_lr, max(1, min(H, W) - 1))
+        padded = np.pad(input_bands, ((0, 0), (safe_pad, safe_pad), (safe_pad, safe_pad)), mode="reflect")[None, ...]
         out = self.ort_session.run(None, {"input": padded})[0][0]
-        pad_sr = pad_lr * self.scale_factor
+        pad_sr = safe_pad * self.scale_factor
         cropped = out[:, pad_sr:-pad_sr, pad_sr:-pad_sr] / 10000.0
-        # Extract RGB: [B2, B3, B4, B8] -> RGB is [B4, B3, B2] -> indices [2, 1, 0]
+        # Extract RGB: [B2, B3, B4, B8, ...] -> RGB is [B4, B3, B2] -> indices [2, 1, 0]
         sr_rgb = cropped[[2, 1, 0], :, :].transpose(1, 2, 0)
         return np.clip(sr_rgb, 0.0, 1.0).astype(np.float32)
 
@@ -289,8 +357,8 @@ class SREngine:
             print(f"[SR Inference Engine] VERIFICATION: Genuine Neural Network Inference (ZERO interpolation fallback)")
             print(f"[SR Inference Engine] =====================================================================\n")
 
-            input_4b = self._prepare_evoland_4band_input(lr_image, lr_raw=lr_raw)
-            sr_rgb = self._infer_evoland_onnx(input_4b, pad_lr=16)
+            input_bands = self._prepare_evoland_input(lr_image, lr_raw=lr_raw)
+            sr_rgb = self._infer_evoland_onnx(input_bands, pad_lr=16)
             return sr_rgb
 
         # -------------------------------------------------------------
@@ -372,21 +440,21 @@ class SREngine:
             print(f"[SR Inference Engine] VERIFICATION: Official Pretrained EVOLAND WorldStrat SR")
             print(f"[SR Inference Engine] =====================================================================\n")
 
-            input_4b = self._prepare_evoland_4band_input(lr_image, lr_raw=lr_raw)
+            input_bands = self._prepare_evoland_input(lr_image, lr_raw=lr_raw)
             
             # Pass 1: Standard forward
-            p1 = self._infer_evoland_onnx(input_4b, pad_lr=16)
+            p1 = self._infer_evoland_onnx(input_bands, pad_lr=16)
             
             # Pass 2: Horizontal flip
-            p2_in = np.flip(input_4b, axis=2)
+            p2_in = np.flip(input_bands, axis=2)
             p2 = np.flip(self._infer_evoland_onnx(p2_in, pad_lr=16), axis=1)
             
             # Pass 3: Vertical flip
-            p3_in = np.flip(input_4b, axis=1)
+            p3_in = np.flip(input_bands, axis=1)
             p3 = np.flip(self._infer_evoland_onnx(p3_in, pad_lr=16), axis=0)
 
             # Pass 4: Dihedral transpose
-            p4_in = np.transpose(input_4b, (0, 2, 1))
+            p4_in = np.transpose(input_bands, (0, 2, 1))
             p4 = np.transpose(self._infer_evoland_onnx(p4_in, pad_lr=16), (1, 0, 2))
 
             samples_arr = np.stack([p1, p2, p3, p4], axis=0)
@@ -423,6 +491,7 @@ class SREngine:
         # 2. PYTORCH STOCHASTIC MC-DROPOUT UNCERTAINTY
         # -------------------------------------------------------------
         if self.model is not None:
+            num_samples = max(1, int(num_samples))
             import torch
             print(f"\n[SR Inference Engine] ================= REAL MODEL INFERENCE VERIFIED =================")
             print(f"[SR Inference Engine] Forward Call: model(input_tensor, force_dropout=True) via PyTorch nn.Module '{self.model.__class__.__name__}'")
@@ -487,7 +556,7 @@ class SREngine:
             }
             return mean_sr, norm_var, stats
         else:
-            mean_sr = self.predict(lr_image, use_tiling=use_tiling, cloud_mask=cloud_mask)
+            mean_sr = self.predict(lr_image, use_tiling=use_tiling, cloud_mask=cloud_mask, lr_raw=lr_raw)
             raw_var = np.zeros((H * self.scale_factor, W * self.scale_factor), dtype=np.float32)
             if cloud_mask is not None:
                 import cv2

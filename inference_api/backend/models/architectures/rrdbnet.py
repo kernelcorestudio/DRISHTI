@@ -68,6 +68,8 @@ class RRDBNet(nn.Module):
     def forward(self, x: torch.Tensor, force_dropout: bool = False) -> torch.Tensor:
         feat = self.conv_first(x)
         body_feat = self.conv_body(self.body(feat))
+        if force_dropout:
+            body_feat = F.dropout2d(body_feat, p=0.05, training=True)
         feat = feat + body_feat
         # 4x upsampling via dual 2x nearest-neighbor interpolation + conv
         feat = self.lrelu(self.conv_up1(F.interpolate(feat, scale_factor=2, mode='nearest')))

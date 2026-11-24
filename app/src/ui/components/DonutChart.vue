@@ -57,7 +57,8 @@
                        :class="{'is-active': index === hover, 'is-muted': hover >= 0 && index !== hover}"
                        :style="sectorStyle(arc, index)"
                        @mouseenter="hover = index"
-                       @mouseleave="hover = -1">
+                       @mouseleave="hover = -1"
+                       @click="hover = (hover === index ? -1 : index)">
                         <path :d="arc.path" :fill="gradientRef(index)" />
 
                         <line v-for="(step, lineIndex) in arc.hatch"
@@ -398,12 +399,13 @@ export default class DonutChart extends Vue {
             const knee = {x: elbow.x + outward * 20, y: elbow.y};
             const sharePoint = pointAt(mid, (OUTER_R + INNER_R) / 2);
 
+            const pad = Math.min(GAP_DEG, span * 0.25);
             return {
                 ...segment,
                 title: capitalize(segment.label),
                 code: segment.label.slice(0, 3).toUpperCase(),
                 share: `${Math.round((segment.value / total) * 100)}%`,
-                path: sectorPath(start + GAP_DEG, end - GAP_DEG),
+                path: sectorPath(start + pad, end - pad),
                 // The wall follows the rim itself, so two neighbouring walls meet on the
                 // boundary instead of one poking out under the other's rim.
                 wallPath: wallBand(start, end),
@@ -417,7 +419,7 @@ export default class DonutChart extends Vue {
                     `${knee.x},${knee.y}`,
                 ].join(" "),
                 dot: pointAt(mid, OUTER_R + 3),
-                hatch: hatchLines(start + GAP_DEG, end - GAP_DEG),
+                hatch: hatchLines(start + pad, end - pad),
                 ribs: wallRibs(start, end),
                 shareX: sharePoint.x,
                 shareY: sharePoint.y + 5,

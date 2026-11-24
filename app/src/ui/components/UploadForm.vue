@@ -15,7 +15,7 @@
                       :menu-props="menuProps"
                       v-model="zoneId" />
 
-            <v-file-input dense outlined hide-details
+            <v-file-input dense outlined hide-details="auto"
                           accept=".tif,.tiff"
                           prepend-icon=""
                           prepend-inner-icon="mdi-image-outline"
@@ -23,7 +23,7 @@
                           :error-messages="beforeError"
                           @change="onBeforeSelected" />
 
-            <v-file-input dense outlined hide-details
+            <v-file-input dense outlined hide-details="auto"
                           accept=".tif,.tiff"
                           prepend-icon=""
                           prepend-inner-icon="mdi-image-filter-hdr"
@@ -157,7 +157,14 @@ export default class UploadForm extends Vue {
     }
 
     private get canSubmit(): boolean {
-        return Boolean(this.zoneId && this.beforeFile && this.afterFile) && !this.submitting;
+        return Boolean(
+            this.zoneId
+            && this.beforeFile
+            && this.afterFile
+            && !this.beforeError
+            && !this.afterError
+            && !this.submitting,
+        );
     }
 
     private get isTerminal(): boolean {

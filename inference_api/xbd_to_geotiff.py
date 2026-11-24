@@ -20,11 +20,16 @@ import argparse
 import json
 import math
 import statistics
+import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 import numpy as np
 from PIL import Image, TiffImagePlugin
+
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
 
 import infer
 
@@ -224,7 +229,7 @@ def main() -> int:
             with Image.open(pre_png) as image:
                 width, height = image.size
             tie_lng = args.anchor_lng + column * width * step_x * args.spacing
-            tie_lat = args.anchor_lat - row * height * step_y * args.spacing
+            tie_lat = args.anchor_lat + row * height * step_y * args.spacing
 
         for role, png in (("before", pre_png), ("after", post_png)):
             with Image.open(png) as image:

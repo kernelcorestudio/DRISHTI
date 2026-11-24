@@ -195,9 +195,9 @@ const WORLD_BOUNDS: [ILatLng, ILatLng] = [
 const STRUCTURE_LIMIT = 10000;
 
 const SEVERITY_FILL: Record<string, string> = {
-    severe: SEVERITY_COLORS.severe,
-    moderate: SEVERITY_COLORS.moderate,
-    none: SEVERITY_COLORS.intact,
+    get severe() { return SEVERITY_COLORS.severe; },
+    get moderate() { return SEVERITY_COLORS.moderate; },
+    get none() { return SEVERITY_COLORS.intact; },
 };
 
 const SEVERITY_LABELS: Record<string, string> = {
@@ -584,12 +584,15 @@ export default class ReportView extends Vue {
         }
     }
 
+    private loadSeq = 0;
+
     private async loadScene(zone: IDisasterZone) {
         const scene = this.sceneId;
         if(!scene || !this.map) {
             return;
         }
 
+        const seq = ++this.loadSeq;
         this.loading = true;
         this.loadError = "";
         this.selectedArea = "";
@@ -608,6 +611,10 @@ export default class ReportView extends Vue {
 
                 payload = {affected, unaffected};
                 this.rawCache.set(scene, payload);
+            }
+
+            if(seq !== this.loadSeq || !this.map) {
+                return;
             }
 
             if(!payload.affected.length && !payload.unaffected.length) {
@@ -632,7 +639,9 @@ export default class ReportView extends Vue {
 
             this.updateViewBounds();
         } finally {
-            this.loading = false;
+            if(seq === this.loadSeq) {
+                this.loading = false;
+            }
         }
     }
 
@@ -744,7 +753,7 @@ export default class ReportView extends Vue {
     async mounted(): Promise<void> {
         this.map = L.map(this.mapRef, {
             minZoom: 2,
-            maxZoom: 18,
+            maxZoom: 19,
             zoomControl: true,
             attributionControl: true,
         }).setView([20, 0], 3);
@@ -770,8 +779,12 @@ export default class ReportView extends Vue {
         this.map.on("zoomend", () => this.updateViewBounds());
 
         if(!this.app.disasterZones.length) {
-            this.app.setDisasterZones(await fetchDisasterZones());
-            this.app.setDefaultDisasterZone();
+            try {
+                this.app.setDisasterZones(await fetchDisasterZones());
+                this.app.setDefaultDisasterZone();
+            } catch(error) {
+                this.loadError = error instanceof Error ? error.message : String(error);
+            }
         }
     }
 

@@ -21,6 +21,11 @@ export async function fetchDisasterZones(): Promise<IDisasterZone[]> {
         console.warn("GeoServ zones unavailable, falling back to disaster-zones.json", error);
     }
 
-    const response = await fetch("disaster-zones.json");
+    const base = process.env.BASE_URL || "/";
+    const normalizedBase = base.endsWith("/") ? base : `${base}/`;
+    const response = await fetch(`${normalizedBase}disaster-zones.json`);
+    if(!response.ok) {
+        throw new Error(`Failed to load disaster-zones.json: ${response.status} ${response.statusText}`);
+    }
     return await response.json();
 }

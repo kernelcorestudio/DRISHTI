@@ -81,14 +81,13 @@ def generate_mask_for_image(src_geo: Union[str, Path], src_tif: str, dst_file: s
                                      shape=(650, 650)
                                      )
 
-        # squashing it down, currently R = Footprint, B= contact, G= bounary,
-        # squash it so 0 = blank, 1 = footprint 2 = contact 3 = boundary
+        # Squash channels into class IDs: 0 = background, 1 = boundary, 2 = contact, 3 = footprint interior
         mask_form = fbc_mask['boundary']
         mask_form = np.where(mask_form == 0, fbc_mask['contact'] * 2, mask_form)
         mask_form = np.where(mask_form == 0, fbc_mask['footprint'] * 3, mask_form)
-        Image.fromarray(mask_form).save(dst_file)
+        Image.fromarray(mask_form.astype(np.uint8)).save(dst_file)
         return True
-    except ValueError:
+    except (ValueError, KeyError, OSError):
         return False
 
 

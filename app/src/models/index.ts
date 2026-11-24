@@ -174,6 +174,7 @@ export interface IJob {
 export interface ISRPreset {
     id: string;
     name: string;
+    title?: string;
     description: string;
     bbox: number[];
     default_model?: string;
@@ -181,12 +182,12 @@ export interface ISRPreset {
 }
 
 export interface ISRMetrics {
-    psnr?: number;
-    ssim?: number;
-    sam?: number;
-    ergas?: number;
-    niqe?: number;
-    brisque?: number;
+    psnr?: number | null;
+    ssim?: number | null;
+    sam?: number | null;
+    ergas?: number | null;
+    niqe?: number | null;
+    brisque?: number | null;
 }
 
 export interface IBlockchainRecord {
@@ -197,23 +198,36 @@ export interface IBlockchainRecord {
     status: "verified" | "simulated" | "pending" | "failed";
     explorer_url?: string;
     timestamp?: string;
+    mode?: string;
 }
 
 export interface ISRResult {
     status: string;
-    model: string;
-    scale_factor: number;
+    model?: string;
+    scale_factor?: number;
     inference_time_ms: number;
     lr_preview: string;
     sr_preview: string;
+    hr_preview?: string | null;
+    has_reference?: boolean;
+    reference_tier_label?: string;
     confidence_heatmap_preview?: string;
+    confidence_heatmap?: string;
     cloud_mask_preview?: string;
     mean_confidence?: number;
     hallucination_pct?: number;
     cloud_coverage_pct?: number;
     cloud_warning?: string | null;
     metrics?: ISRMetrics;
+    usp_metrics?: {
+        avg_confidence?: number;
+        sam_degrees?: number;
+        mean_uncertainty?: number;
+        cycle_consistency_mae?: number;
+        cloud_coverage_pct?: number;
+    };
     blockchain_record?: IBlockchainRecord;
+    blockchain_provenance?: any;
     metadata?: any;
 }
 
@@ -240,7 +254,9 @@ export interface ISpectralResult {
     description: string;
     bands_used: string[];
     is_index: boolean;
-    legend?: ISpectralLegendItem[];
+    legend?: ISpectralLegendItem[] | Record<string, any>;
+    legend_items?: ISpectralLegendItem[];
+    gradient_css?: string | null;
     stats?: {
         min: number;
         max: number;
@@ -249,17 +265,24 @@ export interface ISpectralResult {
     };
     coverage_stats?: ISpectralCoverageStats;
     lr_preview: string;
-    sr_preview?: string;
+    sr_preview?: string | null;
 }
 
 export interface IInfrastructureResult {
     status: string;
-    building_count: number;
-    road_count: number;
-    total_road_length_km: number;
-    total_road_area_km2: number;
-    total_built_area_km2: number;
+    building_count?: number;
+    road_count?: number;
+    total_road_length_km?: number;
+    total_road_area_km2?: number;
+    total_built_area_km2?: number;
+    infrastructure_summary?: {
+        buildings_count?: number;
+        road_segments_count?: number;
+        roads_length_km?: number;
+        total_built_area_km2?: number;
+    };
     geojson?: any;
     overlay_preview?: string;
+    infrastructure_overlay?: string;
 }
 
