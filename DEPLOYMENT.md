@@ -109,3 +109,9 @@ Expected `/health` status is `"ready"` with `geoserv_reachable: true` and `missi
 - **Webpack SSL / OpenSSL 3 error on Node 17+**: Use `npm run serve` / `npm run build`, which already pass `NODE_OPTIONS=--openssl-legacy-provider`.
 - **Missing optional SR module warnings**: `main.py` degrades gracefully if `onnxruntime`, `realesrgan`, `pyiqa`, or `web3` are not installed.
 - **Port already in use**: Check `Get-NetTCPConnection -LocalPort 8080,8088,8099` before starting services.
+
+## 12. Known Hardware & Infrastructure Limitations
+
+- CPU inference on full tiles is significantly slower than CUDA GPU execution.
+- Job queue state (`JobQueue`) is stored in memory and resets when the Python process restarts.
+- Live startup and browser end-to-end verification from `K:\Mp3\RAHAT` were not executed on default ports `8080/8088/8099` because external `K:\PROJECTS\RAHAT` processes already occupied those ports during this session.
