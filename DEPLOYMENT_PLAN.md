@@ -182,3 +182,9 @@ In production, replace `vue-cli-service serve` (`:8080`) with Nginx/Caddy servin
 - Serve static SPA assets (`/` with `try_files $uri $uri/ /index.html` for Vue Router `history` mode).
 - Proxy `/api/` (stripping `/api` prefix) to `http://127.0.0.1:8099/`.
 - Proxy `/geo/` and `/disasters/` to `http://127.0.0.1:8088/` (or expose GeoServ directly on `:8088` with CORS).
+
+## 22. Network Binding & CORS Hardening
+
+- Default listeners bind to `127.0.0.1` (`RAHAT_API_HOST=127.0.0.1`, GeoServ `--hostname 127.0.0.1`).
+- Before exposing beyond localhost, restrict `CORSMiddleware(allow_origins=...)` in `inference_api/main.py` and `Cors::default()` in `geoserv/src/main.rs` to trusted frontend origins.
+- Enforce TLS termination at the reverse proxy when accepting GeoTIFF uploads over public networks.
