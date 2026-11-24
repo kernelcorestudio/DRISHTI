@@ -236,3 +236,9 @@ Recommended automated checks on every pull request:
 - [ ] `app/dist/` builds cleanly without TypeScript or ESLint errors.
 - [ ] `README.md`, `DEPLOYMENT.md`, and `TESTING.md` reflect current routes and env vars.
 - [ ] Tag release commit after verifying `/health`, `/diagnostics`, and demo/real upload flow.
+
+## 31. Rollback Strategy
+
+- **Frontend**: Restore prior `app/dist/` bundle and restart static server.
+- **GeoServ**: Keep previous compiled `geoserv` release binary; GeoJSON schema on disk is backwards-compatible.
+- **Inference API**: Revert to prior Git commit and restart Uvicorn; note in-memory `JobQueue` history resets on API restart while `geoserv/test_data` GeoJSON artifacts persist on disk.
