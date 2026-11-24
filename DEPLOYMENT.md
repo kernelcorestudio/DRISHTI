@@ -44,3 +44,13 @@ Dependencies are locked in `app/package.json` and `app/package-lock.json`:
 cd app
 npm ci
 ```
+
+## 4. Environment Configuration
+
+Copy `.env.example` to `.env` at the repository root and adjust values for your host:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Keep real credentials (`SH_CLIENT_ID`, `SH_CLIENT_SECRET`, `POLYGON_PRIVATE_KEY`) strictly inside `.env` (gitignored).
