@@ -115,3 +115,12 @@ Expected `/health` status is `"ready"` with `geoserv_reachable: true` and `missi
 - CPU inference on full tiles is significantly slower than CUDA GPU execution.
 - Job queue state (`JobQueue`) is stored in memory and resets when the Python process restarts.
 - Live startup and browser end-to-end verification from `K:\Mp3\RAHAT` were not executed on default ports `8080/8088/8099` because external `K:\PROJECTS\RAHAT` processes already occupied those ports during this session.
+
+## 13. Production Bundle Build
+
+To emit a production SPA bundle into `app/dist/`:
+
+```powershell
+cd app
+npm run build
+```
