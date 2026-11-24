@@ -229,3 +229,10 @@ Recommended automated checks on every pull request:
 1. **Python**: `python -m pytest inference_api/tests -v` and `python inference_api/infer.py --self-test`.
 2. **Rust**: `cargo test --tests` and `cargo build --release` in `geoserv/`.
 3. **Frontend**: `npm ci`, `npm run test:unit -- --runInBand`, `npm run lint`, and `npm run build` in `app/`.
+
+## 30. Release Promotion Checklist
+
+- [ ] All Python, Rust, and Vue automated test suites pass with zero skipped assertions.
+- [ ] `app/dist/` builds cleanly without TypeScript or ESLint errors.
+- [ ] `README.md`, `DEPLOYMENT.md`, and `TESTING.md` reflect current routes and env vars.
+- [ ] Tag release commit after verifying `/health`, `/diagnostics`, and demo/real upload flow.
