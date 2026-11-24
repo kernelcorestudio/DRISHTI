@@ -117,3 +117,11 @@ Browser (:8080)
    ```powershell
    npm run build
    ```
+
+## 13. Pre-Flight Readiness Gates
+
+- [ ] `.env` created from `.env.example`; real secrets never committed to Git.
+- [ ] `geoserv/test_data/` and `geoserv/disaster-zones.json` readable on disk.
+- [ ] `app/public/tiles/` (`833` PNGs) present for offline demo zones.
+- [ ] Ports `8080`, `8088`, and `8099` free from conflicting stale processes.
+- [ ] `infer.py --self-test` passes `20/20` checks prior to service startup.
