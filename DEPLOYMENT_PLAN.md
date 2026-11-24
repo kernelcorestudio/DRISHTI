@@ -59,3 +59,14 @@ Browser (:8080)
 - `SH_CLIENT_ID`, `SH_CLIENT_SECRET`, `SH_BASE_URL`, `SH_TOKEN_URL`: Copernicus Data Space Ecosystem OAuth2 credentials.
 - `POLYGON_AMOY_RPC`, `POLYGON_CHAIN_ID` (`80002`), `CONTRACT_ADDRESS`, `POLYGON_WALLET_ADDRESS`, `POLYGON_PRIVATE_KEY`, `POLYGONSCAN_BASE_URL`.
 - `VUE_APP_ABSOLUTE_URL`: Optional frontend prefix for static public asset URLs.
+
+## 7. Storage Layout & Artifact Boundaries
+
+| Path | Tracked in Git | Purpose |
+| --- | --- | --- |
+| `geoserv/test_data/` | Yes (demo scenes) | Per-zone `structures-affected.geojson`, `structures-unaffected.geojson`, `amenities.geojson` |
+| `app/public/tiles/` | Yes (`833` files) | Offline XYZ PNG tiles for Palu, Harvey, Michael, Matthew |
+| `inference_api/models/*.json` | Yes | Stage-1 & Stage-2 evaluation metadata rendered by Dashboard |
+| `inference_api/models/*.pkl` | No (gitignored) | Exported FastAI Stage-1 (`236.65 MB`) & Stage-2 (`115.68 MB`) models |
+| `inference_api/work/` | No (gitignored) | Per-job uploaded `before.tif` / `after.tif` pairs |
+| `weights/`, `cache/`, `outputs/` | No (gitignored) | Optional SR ONNX/PyTorch weights, CDSE tile cache, and JSON provenance ledger |
