@@ -194,3 +194,9 @@ In production, replace `vue-cli-service serve` (`:8080`) with Nginx/Caddy servin
 - `infer.write_geojson()` writes to `<layer>.geojson.tmp` first and atomically replaces the target file (`temp_path.replace(path)`).
 - `GeoServ` holds an in-memory `RwLock<HashMap<...>>` updated cleanly via `POST /disasters/reload`, so readers never observe half-written GeoJSON.
 - Ensure `RAHAT_DATA_DIR` and GeoServ `--data-dir` resolve to the exact same directory.
+
+## 24. Backup & Work-Directory Retention
+
+- Back up `geoserv/test_data/` (or production `RAHAT_DATA_DIR`) and `cache/blockchain_ledger.json` before bulk batch runs.
+- Periodically prune stale UUID upload folders under `inference_api/work/` once jobs complete.
+- Preserve `inference_api/models/*.pkl` and `stage1_meta.json` / `stage2_meta.json` in artifact storage.
