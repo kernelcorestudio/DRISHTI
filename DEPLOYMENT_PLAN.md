@@ -125,3 +125,9 @@ Browser (:8080)
 - [ ] `app/public/tiles/` (`833` PNGs) present for offline demo zones.
 - [ ] Ports `8080`, `8088`, and `8099` free from conflicting stale processes.
 - [ ] `infer.py --self-test` passes `20/20` checks prior to service startup.
+
+## 14. Startup Sequence
+
+1. **Start GeoServ first (`:8088`)** so `/disasters/zones` and `/disasters/reload` are ready when the API initializes health checks.
+2. **Start Inference API second (`:8099`)** and verify `GET /health` reports `geoserv_reachable: true`.
+3. **Start Vue SPA third (`:8080`)** (or serve `app/dist/` behind a reverse proxy forwarding `/api/*` -> `:8099` and GeoServ endpoints -> `:8088`).
