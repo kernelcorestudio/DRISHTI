@@ -47,3 +47,11 @@ app/
 cd geoserv
 cargo test --tests
 ```
+
+### Vue Frontend
+
+```powershell
+cd app
+npx vue-cli-service test:unit --runInBand --verbose
+npx vue-cli-service lint tests/unit/*.ts
+```
