@@ -91,3 +91,14 @@ npm run serve
 ```
 
 Open `http://127.0.0.1:8080`. The dev server proxies `/api/*` requests to `http://127.0.0.1:8099` via `app/vue.config.js`.
+
+## 10. Health Verification
+
+```powershell
+curl.exe -s http://127.0.0.1:8088/disasters/zones
+curl.exe -s http://127.0.0.1:8099/health
+curl.exe -s http://127.0.0.1:8099/diagnostics
+curl.exe -I http://127.0.0.1:8080/
+```
+
+Expected `/health` status is `"ready"` with `geoserv_reachable: true` and `missing_models: []`.
