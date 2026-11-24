@@ -221,3 +221,11 @@ In production, replace `vue-cli-service serve` (`:8080`) with Nginx/Caddy servin
 - Never store real `SH_CLIENT_SECRET` or `POLYGON_PRIVATE_KEY` values in `.env.example` or any tracked source file.
 - Use `.env` (gitignored) for local runtime secrets and environment injection in CI/CD or container orchestration.
 - Rotate Copernicus CDSE credentials and Polygon testnet keys immediately if accidentally committed.
+
+## 29. CI/CD Pipeline Blueprint
+
+Recommended automated checks on every pull request:
+
+1. **Python**: `python -m pytest inference_api/tests -v` and `python inference_api/infer.py --self-test`.
+2. **Rust**: `cargo test --tests` and `cargo build --release` in `geoserv/`.
+3. **Frontend**: `npm ci`, `npm run test:unit -- --runInBand`, `npm run lint`, and `npm run build` in `app/`.
