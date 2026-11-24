@@ -151,3 +151,9 @@ curl.exe -I http://127.0.0.1:8080/
 3. Poll `GET /jobs/{job_id}` until `status == "succeeded"`.
 4. Verify `structures-affected.geojson` and `structures-unaffected.geojson` exist under `RAHAT_DATA_DIR/<zone>/` with valid `bbox` arrays.
 5. Confirm GeoServ `/geo/<zone>/structures-affected` returns the updated polygons and Leaflet renders them on `/map`.
+
+## 17. Logging & Observability
+
+- **Python API**: Python `logging` configured via `RAHAT_LOG_LEVEL` (`INFO` default); logs job queueing, model load latency, and GeoServ reload outcomes to stdout.
+- **Rust GeoServ**: `env_logger` (`RUST_LOG=info` default) + Actix `Logger::default()` access logs.
+- **Vue SPA**: `App.vue` polls `/health`, `/diagnostics`, and `/jobs` every `10s` and surfaces connection failures in `serviceError` banners.
