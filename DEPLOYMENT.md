@@ -64,3 +64,12 @@ Keep real credentials (`SH_CLIENT_ID`, `SH_CLIENT_SECRET`, `POLYGON_PRIVATE_KEY`
 
 - Offline XYZ PNG imagery (`833` files, `~50.9 MB`) lives in `app/public/tiles/` for the four xBD demo scenes (`z15`–`z17`).
 - `new-orleans` and `oman` in `geoserv/disaster-zones.json` pull pre/post imagery from external Maxar/SilentByte endpoints when internet access is available.
+
+## 7. Starting the Python Service (Port `8099`)
+
+```powershell
+cd inference_api
+.\.venv311\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8099
+```
+
+For smoke testing without exported `.pkl` models, set `$env:RAHAT_INFER_MODE="demo"` before launching Uvicorn.
