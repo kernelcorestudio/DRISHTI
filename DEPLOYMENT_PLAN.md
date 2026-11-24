@@ -257,3 +257,12 @@ Recommended automated checks on every pull request:
 | Weekly | Clean completed upload artifacts | `inference_api/work/` |
 | Weekly | Check CDSE cache & ledger size | `cache/tiles/`, `cache/blockchain_ledger.json` |
 | Monthly | Run full test suites & dependency audit | `pytest`, `cargo test`, `npm run test:unit` |
+
+## 34. Deployment Verification Sign-Off
+
+| Gate | Command / Endpoint | Expected Result |
+| --- | --- | --- |
+| GeoServ Ready | `GET :8088/disasters/zones` | JSON array with 6 zones |
+| API Ready | `GET :8099/health` | `status: "ready"` |
+| Diagnostics | `GET :8099/diagnostics` | Models, zones, and tiles populated |
+| Frontend Ready | `GET :8080/` | HTTP 200 SPA shell |
