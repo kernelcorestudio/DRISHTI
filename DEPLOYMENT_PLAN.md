@@ -17,3 +17,11 @@ Browser (:8080)
   │                                              └── POST /disasters/reload ──► GeoServ (:8088)
   └── /geo/*, /disasters/* ─────────────────► Rust Actix-Web GeoServ (:8088)
 ```
+
+## 3. Service Port & Protocol Matrix
+
+| Service | Directory | Port | Protocol | Primary Role |
+| --- | --- | --- | --- | --- |
+| Vue 2 SPA | `app/` | `8080` | HTTP | 10-workspace UI, offline XYZ tiles, `/api` proxy |
+| Rust GeoServ | `geoserv/` | `8088` | HTTP | KDBush spatial GeoJSON & heatmap server |
+| Python Inference API | `inference_api/` | `8099` | HTTP | Serialized job queue, Stage-1/2 inference, optional SR router |
