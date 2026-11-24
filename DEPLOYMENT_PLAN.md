@@ -25,3 +25,9 @@ Browser (:8080)
 | Vue 2 SPA | `app/` | `8080` | HTTP | 10-workspace UI, offline XYZ tiles, `/api` proxy |
 | Rust GeoServ | `geoserv/` | `8088` | HTTP | KDBush spatial GeoJSON & heatmap server |
 | Python Inference API | `inference_api/` | `8099` | HTTP | Serialized job queue, Stage-1/2 inference, optional SR router |
+
+## 4. Hardware & Capacity Baseline
+
+- **Minimum CPU runtime**: 4 vCPU, 8 GB RAM (`RAHAT_DEVICE=cpu`, single-worker job queue).
+- **Recommended GPU runtime**: NVIDIA CUDA GPU with >= 8 GB VRAM for Stage-1 UNet (`384x384`) and Stage-2 ResNet34 (`256x256`) crops.
+- **Disk footprint**: ~53 MB offline map tiles (`app/public/tiles`), ~352 MB FastAI learners (`inference_api/models/*.pkl`), plus workspace uploads (`inference_api/work/`) and optional ONNX/PyTorch SR weights (`weights/`).
