@@ -40,3 +40,10 @@ app/
 .\inference_api\.venv311\Scripts\python.exe .\inference_api\infer.py --self-test
 .\inference_api\.venv311\Scripts\python.exe -m pytest .\inference_api\tests -v
 ```
+
+### Rust GeoServ
+
+```powershell
+cd geoserv
+cargo test --tests
+```
