@@ -210,3 +210,8 @@ In production, replace `vue-cli-service serve` (`:8080`) with Nginx/Caddy servin
 
 - **Symptom**: `/health` reports `degraded` (`geoserv_reachable: false`) or completed job sets `warning: "artifacts written but GeoServ reload failed"`.
 - **Resolution**: Start GeoServ on `RAHAT_GEOSERV_URL` (`http://127.0.0.1:8088`) and manually issue `POST http://127.0.0.1:8088/disasters/reload`.
+
+## 27. Runbook — Queue Saturation (`HTTP 429`) & Port Conflicts
+
+- **Queue Full (`429`)**: Wait for active jobs in `GET /jobs` to finish, or raise `RAHAT_MAX_JOBS` carefully (jobs still execute serially).
+- **Port Conflicts (`8080`, `8088`, `8099`)**: Inspect bound sockets (`Get-NetTCPConnection -LocalPort 8080,8088,8099`) and verify no legacy copy of RAHAT is holding those ports.
