@@ -54,3 +54,8 @@ Copy-Item .env.example .env
 ```
 
 Keep real credentials (`SH_CLIENT_ID`, `SH_CLIENT_SECRET`, `POLYGON_PRIVATE_KEY`) strictly inside `.env` (gitignored).
+
+## 5. Model and Dataset Requirements
+
+- **Model Exports (`inference_api/models/`)**: `predict_footprint_fine_tuned.pkl` (`236.65 MB`) and `predict_damage_unfrozen.pkl` (`115.68 MB`) must be present for `RAHAT_INFER_MODE=real`. Metadata JSONs (`stage1_meta.json`, `stage2_meta.json`) are tracked in Git.
+- **GeoJSON Zones (`geoserv/test_data/`)**: Ships 6 zones (`new-orleans`, `oman`, `demo-hurricane-harvey_00000146`, `demo-hurricane-matthew_00000156`, `demo-hurricane-michael_00000247`, `demo-palu-tsunami_00000118`) plus `disaster-zones.json`.
