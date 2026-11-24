@@ -40,3 +40,14 @@ Browser (:8080)
 | Rust / Cargo | `rustc 1.97.1` / `cargo 1.97.1` | Builds `geoserv` and `xview2_feature_extractor` |
 | Node.js / npm | `v24.14.0` / `npm 11.16.0` | Uses `NODE_OPTIONS=--openssl-legacy-provider` for Webpack 4 |
 | Yarn (optional) | `1.22.22` | Alternative frontend package runner |
+
+## 6. Environment Variable Contract
+
+### Core Inference API (`inference_api/main.py`)
+
+- `RAHAT_INFER_MODE`: `real` (run models) or `demo` (synthetic GeoJSON detections).
+- `RAHAT_DATA_DIR`: GeoServ zone directory (default `./geoserv/test_data`).
+- `RAHAT_WORK_DIR`: Upload staging directory (default `./inference_api/work`).
+- `RAHAT_MODEL_DIR`: Learner export directory (default `./inference_api/models`).
+- `RAHAT_GEOSERV_URL`: GeoServ base URL (default `http://127.0.0.1:8088`).
+- `RAHAT_DEVICE`, `RAHAT_API_HOST`, `RAHAT_API_PORT`, `RAHAT_MAX_UPLOAD_MB`, `RAHAT_MAX_JOBS`, `RAHAT_MIN_AREA`, `RAHAT_LOG_LEVEL`.
