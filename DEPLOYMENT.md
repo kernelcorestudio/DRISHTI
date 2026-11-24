@@ -14,3 +14,15 @@ Step-by-step installation, configuration, startup, and verification instructions
 - **Python**: `3.11` (verified `Python 3.11.9` in `inference_api/.venv311`).
 - **Rust & Cargo**: Stable toolchain `1.70+` (verified `cargo 1.97.1`, `rustc 1.97.1`).
 - **Node.js & npm**: Node `16+` (verified `v24.14.0`, `npm 11.16.0`; webpack scripts automatically pass `--openssl-legacy-provider`).
+
+## 3. Dependency Installation
+
+### Python Inference API (`inference_api/`)
+
+```powershell
+cd inference_api
+python -m venv .venv311
+.\.venv311\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+> Note: Core RAHAT requires `fastapi`, `uvicorn`, `torch`, `fastai`, `cloudpickle`, `shapely`, `pillow`, `scikit-image`, `opencv-python-headless`, and `requests`. Optional NETRA SR features use `onnxruntime`, `sentinelhub`, `spyndex`, `leafmap`, `pyiqa`, `web3`, and `python-dotenv` (also listed in root `requirements.txt`).
