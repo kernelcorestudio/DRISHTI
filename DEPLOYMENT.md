@@ -73,3 +73,12 @@ cd inference_api
 ```
 
 For smoke testing without exported `.pkl` models, set `$env:RAHAT_INFER_MODE="demo"` before launching Uvicorn.
+
+## 8. Starting the Rust Service (Port `8088`)
+
+```powershell
+cd geoserv
+cargo run --release -- --data-dir test_data --hostname 127.0.0.1 --port 8088
+```
+
+Run from `geoserv/` so `disaster-zones.json` in the working directory is loaded.
