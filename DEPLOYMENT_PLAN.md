@@ -81,3 +81,14 @@ Browser (:8080)
    cargo run --release -- --data-dir test_data --hostname 127.0.0.1 --port 8088
    ```
 3. Confirm startup logs list feature counts for every `(group, layer)` pair.
+
+## 9. Rollout Phase 2 — Python Inference API (`:8099`)
+
+1. Create/activate Python `3.11` virtual environment (`inference_api/.venv311`).
+2. Install core dependencies from `inference_api/requirements.txt`.
+3. Confirm `predict_footprint_fine_tuned.pkl` and `predict_damage_unfrozen.pkl` exist in `inference_api/models/` (or set `RAHAT_INFER_MODE=demo` for smoke runs without weights).
+4. Start Uvicorn from `inference_api/`:
+   ```powershell
+   cd inference_api
+   .\.venv311\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8099
+   ```
