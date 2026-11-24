@@ -200,3 +200,8 @@ In production, replace `vue-cli-service serve` (`:8080`) with Nginx/Caddy servin
 - Back up `geoserv/test_data/` (or production `RAHAT_DATA_DIR`) and `cache/blockchain_ledger.json` before bulk batch runs.
 - Periodically prune stale UUID upload folders under `inference_api/work/` once jobs complete.
 - Preserve `inference_api/models/*.pkl` and `stage1_meta.json` / `stage2_meta.json` in artifact storage.
+
+## 25. Runbook — Missing Model Exports (`HTTP 503`)
+
+- **Symptom**: `/health` shows `status: "degraded"` with non-empty `missing_models`; `/predict/disaster` returns `503`.
+- **Resolution**: Place `predict_footprint_fine_tuned.pkl` and `predict_damage_unfrozen.pkl` in `RAHAT_MODEL_DIR`, or switch to `RAHAT_INFER_MODE=demo` for UI/pipeline validation without weights.
