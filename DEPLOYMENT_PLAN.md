@@ -188,3 +188,9 @@ In production, replace `vue-cli-service serve` (`:8080`) with Nginx/Caddy servin
 - Default listeners bind to `127.0.0.1` (`RAHAT_API_HOST=127.0.0.1`, GeoServ `--hostname 127.0.0.1`).
 - Before exposing beyond localhost, restrict `CORSMiddleware(allow_origins=...)` in `inference_api/main.py` and `Cors::default()` in `geoserv/src/main.rs` to trusted frontend origins.
 - Enforce TLS termination at the reverse proxy when accepting GeoTIFF uploads over public networks.
+
+## 23. Data Integrity & Atomic GeoJSON Publishing
+
+- `infer.write_geojson()` writes to `<layer>.geojson.tmp` first and atomically replaces the target file (`temp_path.replace(path)`).
+- `GeoServ` holds an in-memory `RwLock<HashMap<...>>` updated cleanly via `POST /disasters/reload`, so readers never observe half-written GeoJSON.
+- Ensure `RAHAT_DATA_DIR` and GeoServ `--data-dir` resolve to the exact same directory.
