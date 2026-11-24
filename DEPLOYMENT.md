@@ -82,3 +82,12 @@ cargo run --release -- --data-dir test_data --hostname 127.0.0.1 --port 8088
 ```
 
 Run from `geoserv/` so `disaster-zones.json` in the working directory is loaded.
+
+## 9. Starting the Vue Frontend (Port `8080`)
+
+```powershell
+cd app
+npm run serve
+```
+
+Open `http://127.0.0.1:8080`. The dev server proxies `/api/*` requests to `http://127.0.0.1:8099` via `app/vue.config.js`.
