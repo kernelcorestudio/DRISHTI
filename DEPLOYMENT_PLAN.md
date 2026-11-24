@@ -157,3 +157,9 @@ curl.exe -I http://127.0.0.1:8080/
 - **Python API**: Python `logging` configured via `RAHAT_LOG_LEVEL` (`INFO` default); logs job queueing, model load latency, and GeoServ reload outcomes to stdout.
 - **Rust GeoServ**: `env_logger` (`RUST_LOG=info` default) + Actix `Logger::default()` access logs.
 - **Vue SPA**: `App.vue` polls `/health`, `/diagnostics`, and `/jobs` every `10s` and surfaces connection failures in `serviceError` banners.
+
+## 18. Queue & Inference Parameter Tuning
+
+- `RAHAT_MAX_UPLOAD_MB=512`: Protects memory during multipart GeoTIFF ingestion (returns HTTP `413` above limit).
+- `RAHAT_MAX_JOBS=4`: Limits queued + running jobs in `JobQueue` (returns HTTP `429` when full; worker semaphore serializes GPU/CPU execution `1` job at a time).
+- `RAHAT_MIN_AREA=20`: Tuned minimum building area in `384x384` mask pixels (`EVALUATION` measured mean IoU `0.473` at `min_area=20` vs `0.082` at `400`).
