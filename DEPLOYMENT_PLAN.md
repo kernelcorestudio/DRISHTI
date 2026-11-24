@@ -143,3 +143,11 @@ curl.exe -I http://127.0.0.1:8080/
 
 - `/health` must return `status: "ready"` (`geoserv_reachable: true`, `missing_models: []`).
 - `/diagnostics` must list non-empty `zones`, `models`, and `imagery` inventories.
+
+## 16. End-to-End Smoke Validation Workflow
+
+1. Submit a north-up georeferenced `before.tif` + `after.tif` pair via `/inference` UI or `POST /predict/disaster?zone_id=<zone>`.
+2. Confirm HTTP `202` with a valid UUID4 `job_id`.
+3. Poll `GET /jobs/{job_id}` until `status == "succeeded"`.
+4. Verify `structures-affected.geojson` and `structures-unaffected.geojson` exist under `RAHAT_DATA_DIR/<zone>/` with valid `bbox` arrays.
+5. Confirm GeoServ `/geo/<zone>/structures-affected` returns the updated polygons and Leaflet renders them on `/map`.
