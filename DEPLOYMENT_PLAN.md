@@ -131,3 +131,15 @@ Browser (:8080)
 1. **Start GeoServ first (`:8088`)** so `/disasters/zones` and `/disasters/reload` are ready when the API initializes health checks.
 2. **Start Inference API second (`:8099`)** and verify `GET /health` reports `geoserv_reachable: true`.
 3. **Start Vue SPA third (`:8080`)** (or serve `app/dist/` behind a reverse proxy forwarding `/api/*` -> `:8099` and GeoServ endpoints -> `:8088`).
+
+## 15. Post-Startup Health & Diagnostics Checks
+
+```powershell
+curl.exe -s http://127.0.0.1:8088/disasters/zones
+curl.exe -s http://127.0.0.1:8099/health
+curl.exe -s http://127.0.0.1:8099/diagnostics
+curl.exe -I http://127.0.0.1:8080/
+```
+
+- `/health` must return `status: "ready"` (`geoserv_reachable: true`, `missing_models: []`).
+- `/diagnostics` must list non-empty `zones`, `models`, and `imagery` inventories.
