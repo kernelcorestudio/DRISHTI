@@ -169,3 +169,8 @@ curl.exe -I http://127.0.0.1:8080/
 - FastAI exports (`predict_footprint_fine_tuned.pkl`, `predict_damage_unfrozen.pkl`) were exported on Python `3.13` / Linux; `inference_api/compat.py` patches cross-OS `PosixPath` / pickle compatibility at load time.
 - Set `RAHAT_DEVICE=cpu` on CPU-only servers or `RAHAT_DEVICE=cuda` / `0` on NVIDIA GPU hosts.
 - First real job loads both learners (~352 MB total); subsequent jobs reuse or run per invocation depending on CLI/worker path.
+
+## 20. Offline Imagery & Basemap Strategy
+
+- The 4 xBD demo scenes serve local XYZ tiles from `/tiles/<scene>/{before,after}/{z}/{x}/{y}.png` (`z15`–`z17`) shipped inside `app/public/tiles/`.
+- `new-orleans` and `oman` in `geoserv/disaster-zones.json` point to `https://disavu.silentbyte.com/tiles/...` (external Maxar tiles) and OpenStreetMap base tiles require outbound internet unless proxied/mirrored.
