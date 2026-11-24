@@ -215,3 +215,9 @@ In production, replace `vue-cli-service serve` (`:8080`) with Nginx/Caddy servin
 
 - **Queue Full (`429`)**: Wait for active jobs in `GET /jobs` to finish, or raise `RAHAT_MAX_JOBS` carefully (jobs still execute serially).
 - **Port Conflicts (`8080`, `8088`, `8099`)**: Inspect bound sockets (`Get-NetTCPConnection -LocalPort 8080,8088,8099`) and verify no legacy copy of RAHAT is holding those ports.
+
+## 28. Security & Credential Hygiene
+
+- Never store real `SH_CLIENT_SECRET` or `POLYGON_PRIVATE_KEY` values in `.env.example` or any tracked source file.
+- Use `.env` (gitignored) for local runtime secrets and environment injection in CI/CD or container orchestration.
+- Rotate Copernicus CDSE credentials and Polygon testnet keys immediately if accidentally committed.
