@@ -51,3 +51,11 @@ Browser (:8080)
 - `RAHAT_MODEL_DIR`: Learner export directory (default `./inference_api/models`).
 - `RAHAT_GEOSERV_URL`: GeoServ base URL (default `http://127.0.0.1:8088`).
 - `RAHAT_DEVICE`, `RAHAT_API_HOST`, `RAHAT_API_PORT`, `RAHAT_MAX_UPLOAD_MB`, `RAHAT_MAX_JOBS`, `RAHAT_MIN_AREA`, `RAHAT_LOG_LEVEL`.
+
+### NETRA SR, Copernicus CDSE & Blockchain (`inference_api/backend/`)
+
+- `RAHAT_ROOT`: Optional explicit project root override.
+- `KMP_DUPLICATE_LIB_OK`: Set `TRUE` on Windows to prevent duplicate OpenMP initialization conflicts.
+- `SH_CLIENT_ID`, `SH_CLIENT_SECRET`, `SH_BASE_URL`, `SH_TOKEN_URL`: Copernicus Data Space Ecosystem OAuth2 credentials.
+- `POLYGON_AMOY_RPC`, `POLYGON_CHAIN_ID` (`80002`), `CONTRACT_ADDRESS`, `POLYGON_WALLET_ADDRESS`, `POLYGON_PRIVATE_KEY`, `POLYGONSCAN_BASE_URL`.
+- `VUE_APP_ABSOLUTE_URL`: Optional frontend prefix for static public asset URLs.
