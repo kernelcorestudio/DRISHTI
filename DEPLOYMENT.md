@@ -26,3 +26,12 @@ python -m venv .venv311
 ```
 
 > Note: Core RAHAT requires `fastapi`, `uvicorn`, `torch`, `fastai`, `cloudpickle`, `shapely`, `pillow`, `scikit-image`, `opencv-python-headless`, and `requests`. Optional NETRA SR features use `onnxruntime`, `sentinelhub`, `spyndex`, `leafmap`, `pyiqa`, `web3`, and `python-dotenv` (also listed in root `requirements.txt`).
+
+### Rust GeoServ (`geoserv/`)
+
+Dependencies are locked in `geoserv/Cargo.toml` and `geoserv/Cargo.lock`:
+
+```powershell
+cd geoserv
+cargo build --release
+```
