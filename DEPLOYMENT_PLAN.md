@@ -104,3 +104,16 @@ Browser (:8080)
 - Smart contract source and ABI live in `contracts/TileProvenance.sol` and `contracts/TileProvenance.json`.
 - When `POLYGON_PRIVATE_KEY` and `CONTRACT_ADDRESS` are configured in `.env`, `ProvenanceManager` submits geo-tagged SHA-256 transactions on Polygon Amoy (`chainId=80002`).
 - When `web3` or wallet credentials are omitted, `ProvenanceManager` writes version-chained records to `cache/blockchain_ledger.json`.
+
+## 12. Rollout Phase 5 — Vue 2 Frontend (`:8080`)
+
+1. Install dependencies in `app/` using `npm ci`.
+2. Development server (with `/api` proxy to `127.0.0.1:8099` via `app/vue.config.js`):
+   ```powershell
+   cd app
+   npm run serve
+   ```
+3. Production static bundle output (`app/dist/`):
+   ```powershell
+   npm run build
+   ```
