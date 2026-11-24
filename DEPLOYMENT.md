@@ -35,3 +35,12 @@ Dependencies are locked in `geoserv/Cargo.toml` and `geoserv/Cargo.lock`:
 cd geoserv
 cargo build --release
 ```
+
+### Vue Frontend (`app/`)
+
+Dependencies are locked in `app/package.json` and `app/package-lock.json`:
+
+```powershell
+cd app
+npm ci
+```
