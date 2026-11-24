@@ -242,3 +242,10 @@ Recommended automated checks on every pull request:
 - **Frontend**: Restore prior `app/dist/` bundle and restart static server.
 - **GeoServ**: Keep previous compiled `geoserv` release binary; GeoJSON schema on disk is backwards-compatible.
 - **Inference API**: Revert to prior Git commit and restart Uvicorn; note in-memory `JobQueue` history resets on API restart while `geoserv/test_data` GeoJSON artifacts persist on disk.
+
+## 32. Known Infrastructure & Model Limitations
+
+- In-memory `JobQueue` clears job history on Inference API restart (`MAX_RETAINED_JOBS=200`).
+- `POST /predict/disaster` processes a single north-up GeoTIFF tile pair per job (large scenes must first be tiled with `data_gen/prepare_inference/create_tiles.py`).
+- `starlette 0.27.0` `TestClient` is incompatible with `httpx 0.28.1`; tests use `httpx.ASGITransport` directly.
+- Stage-2 damage classifier achieves `0.389` merged macro-F1 on held-out xBD events and should be used as triage guidance.
