@@ -102,3 +102,10 @@ curl.exe -I http://127.0.0.1:8080/
 ```
 
 Expected `/health` status is `"ready"` with `geoserv_reachable: true` and `missing_models: []`.
+
+## 11. Troubleshooting
+
+- **`starlette.testclient` `httpx` `app` TypeError**: Occurs only in test runners using `starlette 0.27.0` with `httpx 0.28.1`; use `httpx.ASGITransport` instead of `TestClient`.
+- **Webpack SSL / OpenSSL 3 error on Node 17+**: Use `npm run serve` / `npm run build`, which already pass `NODE_OPTIONS=--openssl-legacy-provider`.
+- **Missing optional SR module warnings**: `main.py` degrades gracefully if `onnxruntime`, `realesrgan`, `pyiqa`, or `web3` are not installed.
+- **Port already in use**: Check `Get-NetTCPConnection -LocalPort 8080,8088,8099` before starting services.
