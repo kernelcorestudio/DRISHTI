@@ -205,3 +205,8 @@ In production, replace `vue-cli-service serve` (`:8080`) with Nginx/Caddy servin
 
 - **Symptom**: `/health` shows `status: "degraded"` with non-empty `missing_models`; `/predict/disaster` returns `503`.
 - **Resolution**: Place `predict_footprint_fine_tuned.pkl` and `predict_damage_unfrozen.pkl` in `RAHAT_MODEL_DIR`, or switch to `RAHAT_INFER_MODE=demo` for UI/pipeline validation without weights.
+
+## 26. Runbook — GeoServ Unreachable (`geoserv_reachable: false`)
+
+- **Symptom**: `/health` reports `degraded` (`geoserv_reachable: false`) or completed job sets `warning: "artifacts written but GeoServ reload failed"`.
+- **Resolution**: Start GeoServ on `RAHAT_GEOSERV_URL` (`http://127.0.0.1:8088`) and manually issue `POST http://127.0.0.1:8088/disasters/reload`.
