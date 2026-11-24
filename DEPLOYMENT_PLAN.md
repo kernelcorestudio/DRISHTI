@@ -70,3 +70,14 @@ Browser (:8080)
 | `inference_api/models/*.pkl` | No (gitignored) | Exported FastAI Stage-1 (`236.65 MB`) & Stage-2 (`115.68 MB`) models |
 | `inference_api/work/` | No (gitignored) | Per-job uploaded `before.tif` / `after.tif` pairs |
 | `weights/`, `cache/`, `outputs/` | No (gitignored) | Optional SR ONNX/PyTorch weights, CDSE tile cache, and JSON provenance ledger |
+
+## 8. Rollout Phase 1 — Rust GeoServ (`:8088`)
+
+1. Verify `geoserv/test_data/` contains the 6 indexed zone folders and `geoserv/disaster-zones.json`.
+2. Build and launch GeoServ:
+   ```powershell
+   cd geoserv
+   cargo build --release
+   cargo run --release -- --data-dir test_data --hostname 127.0.0.1 --port 8088
+   ```
+3. Confirm startup logs list feature counts for every `(group, layer)` pair.
