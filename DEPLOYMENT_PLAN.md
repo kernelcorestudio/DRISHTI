@@ -92,3 +92,9 @@ Browser (:8080)
    cd inference_api
    .\.venv311\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8099
    ```
+
+## 10. Rollout Phase 3 — Optional NETRA SR & Spectral Enablement
+
+- `inference_api/main.py` mounts `backend.api.routes` (`/sr`, `/api/sr`, `/api`) inside a `try/except` block.
+- When optional packages (`onnxruntime`, `sentinelhub`, `spyndex`, `leafmap`, `pyiqa`, `web3`, `python-dotenv`) are absent, core RAHAT routes stay active while SR modules enter documented fallback mode.
+- Install full root `requirements.txt` and populate `weights/` + `.env` CDSE keys when deploying live Sentinel-2 10m -> 2.5m enhancement.
