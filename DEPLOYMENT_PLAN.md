@@ -98,3 +98,9 @@ Browser (:8080)
 - `inference_api/main.py` mounts `backend.api.routes` (`/sr`, `/api/sr`, `/api`) inside a `try/except` block.
 - When optional packages (`onnxruntime`, `sentinelhub`, `spyndex`, `leafmap`, `pyiqa`, `web3`, `python-dotenv`) are absent, core RAHAT routes stay active while SR modules enter documented fallback mode.
 - Install full root `requirements.txt` and populate `weights/` + `.env` CDSE keys when deploying live Sentinel-2 10m -> 2.5m enhancement.
+
+## 11. Rollout Phase 4 — Blockchain Provenance (`TileProvenance.sol`)
+
+- Smart contract source and ABI live in `contracts/TileProvenance.sol` and `contracts/TileProvenance.json`.
+- When `POLYGON_PRIVATE_KEY` and `CONTRACT_ADDRESS` are configured in `.env`, `ProvenanceManager` submits geo-tagged SHA-256 transactions on Polygon Amoy (`chainId=80002`).
+- When `web3` or wallet credentials are omitted, `ProvenanceManager` writes version-chained records to `cache/blockchain_ledger.json`.
