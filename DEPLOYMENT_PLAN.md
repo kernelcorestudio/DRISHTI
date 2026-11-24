@@ -31,3 +31,12 @@ Browser (:8080)
 - **Minimum CPU runtime**: 4 vCPU, 8 GB RAM (`RAHAT_DEVICE=cpu`, single-worker job queue).
 - **Recommended GPU runtime**: NVIDIA CUDA GPU with >= 8 GB VRAM for Stage-1 UNet (`384x384`) and Stage-2 ResNet34 (`256x256`) crops.
 - **Disk footprint**: ~53 MB offline map tiles (`app/public/tiles`), ~352 MB FastAI learners (`inference_api/models/*.pkl`), plus workspace uploads (`inference_api/work/`) and optional ONNX/PyTorch SR weights (`weights/`).
+
+## 5. Verified Software Toolchain
+
+| Component | Verified Local Version | Notes |
+| --- | --- | --- |
+| Python | `3.11.9` (`inference_api/.venv311`) | Required for FastAPI `0.103.1`, PyTorch `2.15.0`, fastai `2.8.12` |
+| Rust / Cargo | `rustc 1.97.1` / `cargo 1.97.1` | Builds `geoserv` and `xview2_feature_extractor` |
+| Node.js / npm | `v24.14.0` / `npm 11.16.0` | Uses `NODE_OPTIONS=--openssl-legacy-provider` for Webpack 4 |
+| Yarn (optional) | `1.22.22` | Alternative frontend package runner |
