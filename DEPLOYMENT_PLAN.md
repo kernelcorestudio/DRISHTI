@@ -174,3 +174,11 @@ curl.exe -I http://127.0.0.1:8080/
 
 - The 4 xBD demo scenes serve local XYZ tiles from `/tiles/<scene>/{before,after}/{z}/{x}/{y}.png` (`z15`–`z17`) shipped inside `app/public/tiles/`.
 - `new-orleans` and `oman` in `geoserv/disaster-zones.json` point to `https://disavu.silentbyte.com/tiles/...` (external Maxar tiles) and OpenStreetMap base tiles require outbound internet unless proxied/mirrored.
+
+## 21. Production Reverse-Proxy Architecture
+
+In production, replace `vue-cli-service serve` (`:8080`) with Nginx/Caddy serving the compiled `app/dist/` bundle:
+
+- Serve static SPA assets (`/` with `try_files $uri $uri/ /index.html` for Vue Router `history` mode).
+- Proxy `/api/` (stripping `/api` prefix) to `http://127.0.0.1:8099/`.
+- Proxy `/geo/` and `/disasters/` to `http://127.0.0.1:8088/` (or expose GeoServ directly on `:8088` with CORS).
