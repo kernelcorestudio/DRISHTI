@@ -266,3 +266,16 @@ Recommended automated checks on every pull request:
 | API Ready | `GET :8099/health` | `status: "ready"` |
 | Diagnostics | `GET :8099/diagnostics` | Models, zones, and tiles populated |
 | Frontend Ready | `GET :8080/` | HTTP 200 SPA shell |
+
+## 35. Quick-Reference Start Commands
+
+```powershell
+# Terminal 1 — Rust GeoServ (:8088)
+cd K:\Mp3\RAHAT\geoserv && cargo run --release -- --data-dir test_data
+
+# Terminal 2 — Python FastAPI Inference API (:8099)
+cd K:\Mp3\RAHAT\inference_api && .\.venv311\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8099
+
+# Terminal 3 — Vue 2 Frontend (:8080)
+cd K:\Mp3\RAHAT\app && npm run serve
+```
