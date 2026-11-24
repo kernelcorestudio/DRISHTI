@@ -31,3 +31,12 @@ app/
     ├── inference.spec.ts    # ApiRequestError, UploadForm validation, polling & JobTable
     └── map.spec.ts          # MapView Leaflet panes, layer cycling & GeoJSON loading
 ```
+
+## 3. Test Execution Commands
+
+### Python Inference API
+
+```powershell
+.\inference_api\.venv311\Scripts\python.exe .\inference_api\infer.py --self-test
+.\inference_api\.venv311\Scripts\python.exe -m pytest .\inference_api\tests -v
+```
