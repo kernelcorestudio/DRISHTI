@@ -1,0 +1,39 @@
+# ---------------------------------------------------------------------------
+# RAHAT + NETRA Merged Dependencies
+# ---------------------------------------------------------------------------
+
+# === Core Web & API Framework ===
+fastapi>=0.100.0
+uvicorn>=0.23.0
+pydantic>=2.0.0
+python-multipart>=0.0.6
+requests>=2.31.0
+
+# === Deep Learning & Inference ===
+torch>=2.0.0
+torchvision>=0.15.0
+onnxruntime>=1.15.0
+fastai>=2.7.0
+cloudpickle>=3.0.0
+
+# === Numerical & Geospatial Processing ===
+numpy>=1.24.0
+scipy>=1.10.0
+pandas>=2.0.0
+shapely>=2.0.0
+pillow>=10.0.0
+scikit-image>=0.22.0
+opencv-python-headless>=4.8.0
+matplotlib>=3.7.0
+
+# === Satellite & Remote Sensing (NETRA) ===
+python-dotenv>=1.0.0
+sentinelhub>=3.11.0
+tifffile>=2023.0.0
+spyndex>=0.5.0
+leafmap>=0.30.0
+pyiqa>=0.1.16
+
+# === Blockchain Provenance (NETRA - Optional / Graceful Fallback) ===
+web3>=6.0.0
+eth-account>=0.9.0
