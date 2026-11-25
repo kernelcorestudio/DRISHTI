@@ -1,0 +1,26 @@
+/*
+ * DISASTER RESPONSE APP
+ * Copyright (c) 2021 SilentByte <https://silentbyte.com/>
+ */
+
+/*
+ * Vuetify's own SCSS variables. These are compiled into Vuetify's component CSS at build time,
+ * so they can only describe one palette - the Crimson Hues accents are shared by both themes,
+ * and the surfaces that actually differ are overridden at runtime through --rahat-* in
+ * _tokens.scss. Keep the accent values in step with plugins/vuetify.ts.
+ */
+$primary-color: #a4161a;
+$secondary-color: #d01e2c;
+$accent-color: #e0424e;
+$error-color: #fb7185;
+$info-color: #38bdf8;
+$success-color: #34d399;
+$warning-color: #fbb931;
+
+$text-color: #f4ecec;
+$card-background-color: #080808;
+$card-border-color: rgba(255, 255, 255, 0.08);
+
+$body-font-family: "Roboto", sans-serif;
+$color-pack: false;
+$toolbar-elevation: 0;

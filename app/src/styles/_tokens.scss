@@ -1,0 +1,221 @@
+/*
+ * DISASTER RESPONSE APP
+ * Copyright (c) 2021 SilentByte <https://silentbyte.com/>
+ */
+
+/*
+ * "Crimson Hues" theme tokens: Pure Black OLED on dark, rose-white on light.
+ *
+ * Everything in the app reads colour through these custom properties rather than through hex
+ * literals, so the `dark` / `light` class on <html> retints the whole UI in one place. Vuetify
+ * additionally receives the same values in plugins/vuetify.ts, because its own components
+ * (menus, ripples, skeletons) paint with --v-* rather than with ours.
+ *
+ * Naming: `--crimson-*` is the raw palette and never changes; `--rahat-*` is semantic and swaps.
+ */
+
+:root {
+    /*
+     * #640D14 is the anchor taken from the chosen swatch. The ramp above it exists because a hue
+     * that dark cannot carry a 1px border or an 11px label on pure black - it reads as black. The
+     * deep tone therefore owns large fills and gradients, and the brighter steps own strokes.
+     */
+    --crimson-ink: #1a0507;
+    --crimson-deep: #640d14;
+    --crimson-vivid: #a4161a;
+    --crimson-bright: #d01e2c;
+    --crimson-pale: #fbeff0;
+
+    --rahat-mono: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
+}
+
+@mixin theme-dark {
+    /* Pure OLED: the canvas is true black, never #121212. */
+    --rahat-bg: #000000;
+    --rahat-panel: #080808;
+    --rahat-card: #080808;
+    --rahat-surface-2: #121212;
+    --rahat-surface-warm: #170a0c;
+
+    --rahat-border: rgba(255, 255, 255, 0.08);
+    --rahat-border-strong: #1f1f1f;
+
+    /* Sidebar rows sit one step above the panel they rest on, so each nav item reads as a chip. */
+    --rahat-chip: rgba(255, 255, 255, 0.045);
+    --rahat-chip-hot: rgba(255, 255, 255, 0.08);
+
+    --rahat-text: #f4ecec;
+    --rahat-text-bright: #ffffff;
+    --rahat-text-dim: rgba(244, 236, 236, 0.68);
+    --rahat-text-faint: #a1a1aa;
+
+    --rahat-accent: #a4161a;
+    --rahat-accent-2: #d01e2c;
+    --rahat-highlight: #e0424e;
+    /*
+     * Hover and row-active tint. The deep #640D14 at low alpha over pure black vanishes, so the
+     * interactive wash is mixed from the vivid crimson instead.
+     */
+    --rahat-accent-soft: rgba(164, 22, 26, 0.16);
+    /* White on #A4161A lands at 8.4:1. The old dark ink was chosen for a bright orange fill and
+       would be unreadable on crimson. */
+    --rahat-on-accent: #ffffff;
+
+    /* Legacy alias: an older theme called its accent "yellow". Kept so any straggling
+       var(--rahat-yellow) still resolves while the pages migrate to the semantic names. */
+    --rahat-yellow: var(--rahat-highlight);
+    --rahat-yellow-soft: var(--rahat-warn-soft);
+
+    --rahat-ok: #34d399;
+    --rahat-ok-soft: rgba(52, 211, 153, 0.14);
+    --rahat-warn: #fbb931;
+    --rahat-warn-soft: rgba(251, 185, 49, 0.14);
+    --rahat-danger: #fb7185;
+    --rahat-danger-soft: rgba(251, 113, 133, 0.14);
+    --rahat-info: #38bdf8;
+    --rahat-info-soft: rgba(56, 189, 248, 0.14);
+    --rahat-purple: #a78bfa;
+    --rahat-purple-soft: rgba(167, 139, 250, 0.14);
+
+    --rahat-glass: rgba(8, 8, 8, 0.72);
+    --rahat-glass-strong: rgba(8, 8, 8, 0.88);
+    --rahat-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+    --rahat-shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.45);
+
+    /* Ambient crimson bloom washing down from the top of the viewport. */
+    --rahat-aura: radial-gradient(120% 70% at 50% -12%, rgba(160, 20, 28, 0.28), transparent 62%);
+    --rahat-scroll-thumb: #2b1618;
+    --rahat-scroll-thumb-hover: #3d2124;
+    --rahat-track: rgba(255, 255, 255, 0.03);
+    --rahat-map-bg: #0a0608;
+}
+
+@mixin theme-light {
+    /* Rose-white canvas: reads as white, but carries enough of the accent to belong to it. */
+    --rahat-bg: #fbf2f3;
+    --rahat-panel: #ffffff;
+    --rahat-card: #ffffff;
+    --rahat-surface-2: #f7e7e9;
+    --rahat-surface-warm: #f1dcde;
+
+    --rahat-border: rgba(100, 13, 20, 0.2);
+    --rahat-border-strong: rgba(100, 13, 20, 0.3);
+
+    /* Sidebar rows sit one step above the panel they rest on, so each nav item reads as a chip. */
+    --rahat-chip: rgba(100, 13, 20, 0.05);
+    --rahat-chip-hot: rgba(100, 13, 20, 0.09);
+
+    /* #1C0709 on #FBF2F3 lands at ~16:1 - AAA at every size. */
+    --rahat-text: #1c0709;
+    --rahat-text-bright: #140405;
+    --rahat-text-dim: #6b2c31;
+    --rahat-text-faint: #8c5055;
+
+    /* Lighter than the dark mix: a white card needs only a hint of crimson to read as hovered. */
+    --rahat-accent-soft: rgba(100, 13, 20, 0.09);
+    --rahat-accent: #640d14;
+    --rahat-accent-2: #a4161a;
+    --rahat-highlight: #c81e2b;
+    /* White on #640D14 lands at 13:1 - the deep fill can carry it, unlike the old bright orange. */
+    --rahat-on-accent: #ffffff;
+
+    /* See the dark block: the legacy accent alias is kept, but on a white canvas the deep crimson
+       is the readable end of the ramp, so it points there instead of at the highlight. */
+    --rahat-yellow: var(--rahat-accent);
+    --rahat-yellow-soft: var(--rahat-warn-soft);
+
+    /* Deep, desaturated semantics: on a cream canvas neon washes out and reads as pastel. */
+    --rahat-ok: #047857;
+    --rahat-ok-soft: rgba(4, 120, 87, 0.12);
+    --rahat-warn: #b45309;
+    --rahat-warn-soft: rgba(180, 83, 9, 0.12);
+    --rahat-danger: #be123c;
+    --rahat-danger-soft: rgba(190, 18, 60, 0.12);
+    --rahat-info: #0e7490;
+    --rahat-info-soft: rgba(14, 116, 144, 0.12);
+    --rahat-purple: #6d28d9;
+    --rahat-purple-soft: rgba(109, 40, 217, 0.12);
+
+    --rahat-glass: rgba(255, 255, 255, 0.78);
+    --rahat-glass-strong: rgba(255, 255, 255, 0.92);
+    --rahat-shadow: 0 18px 48px rgba(74, 10, 16, 0.16);
+    --rahat-shadow-soft: 0 8px 24px rgba(74, 10, 16, 0.1);
+
+    --rahat-aura: radial-gradient(120% 70% at 50% -12%, rgba(100, 13, 20, 0.1), transparent 62%);
+    --rahat-scroll-thumb: #e6c6ca;
+    --rahat-scroll-thumb-hover: #d5a9ae;
+    --rahat-track: rgba(100, 13, 20, 0.06);
+    --rahat-map-bg: #f0e2e4;
+}
+
+/* Dark is the default so the very first paint is right even before the boot script runs. */
+:root {
+    @include theme-dark;
+}
+
+html.dark {
+    @include theme-dark;
+}
+
+html.light {
+    @include theme-light;
+}
+
+/* Crimson scrollbars. Thin, so long tables do not grow bright rails. */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--rahat-track);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--rahat-scroll-thumb);
+    border-radius: 6px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--rahat-scroll-thumb-hover);
+    background-clip: padding-box;
+}
+
+::selection {
+    background: rgba(164, 22, 26, 0.38);
+    color: var(--rahat-text-bright);
+}
+
+/* One global, always-visible focus ring so keyboard users can follow the crimson trail. */
+:focus-visible {
+    outline: 2px solid var(--rahat-highlight);
+    outline-offset: 2px;
+}
+
+/*
+ * The flash of colour during a theme swap is unavoidable without a transition, but a permanent
+ * `* { transition: ... }` costs paint on every hover in the app. The store therefore toggles
+ * this class for one frame range only, which animates exactly the swap and nothing else.
+ */
+html.theme-switching,
+html.theme-switching *,
+html.theme-switching *::before,
+html.theme-switching *::after {
+    transition: background-color 260ms ease,
+        border-color 260ms ease,
+        color 260ms ease,
+        fill 260ms ease,
+        stroke 260ms ease,
+        box-shadow 260ms ease !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html.theme-switching,
+    html.theme-switching *,
+    html.theme-switching *::before,
+    html.theme-switching *::after {
+        transition: none !important;
+    }
+}

@@ -1,0 +1,612 @@
+/*
+ * DISASTER RESPONSE APP
+ * Copyright (c) 2021 SilentByte <https://silentbyte.com/>
+ */
+
+@import "./tokens";
+
+html {
+    overflow-y: auto;
+}
+
+/*
+ * Base canvas. Pure #000 on dark, rose-white #FBF2F3 on light - never a grey, never a stark
+ * white. Everything below layers on top of these two colours.
+ */
+html,
+body {
+    background: var(--rahat-bg);
+}
+
+body,
+.v-application {
+    background: var(--rahat-bg) !important;
+    color: var(--rahat-text);
+}
+
+/* Vuetify hard-codes #212121 / #fff on these two, so both need the token override. */
+.v-application--wrap {
+    background: var(--rahat-bg);
+    color: var(--rahat-text);
+    min-height: 100vh;
+}
+
+/*
+ * The ambient crimson spotlight. Painted as a scroll-following background image on the main
+ * content area rather than as a fixed pseudo-element, so it never interferes with the
+ * stacking order of the drawer, the app bar, or the Leaflet panes.
+ */
+.rahat-main {
+    background-color: var(--rahat-bg) !important;
+    background-image: var(--rahat-aura);
+    background-repeat: no-repeat;
+    background-size: 100% 640px;
+}
+
+/* Every page is a scrolling document below the app bar; the map page opts out via .page--flush. */
+.page {
+    padding: 22px 26px 34px;
+    max-width: 1560px;
+    margin: 0 auto;
+}
+
+.page-title {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--rahat-text);
+}
+
+.page-subtitle {
+    margin-top: 4px;
+    font-size: 13px;
+    color: var(--rahat-text-dim);
+}
+
+.grid {
+    display: grid;
+    gap: 16px;
+}
+
+.grid--kpi {
+    grid-template-columns: repeat(auto-fit, minmax(184px, 1fr));
+}
+
+.grid--two {
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+}
+
+.grid--three {
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.mono {
+    font-family: var(--rahat-mono);
+    font-size: 12px;
+}
+
+.dim {
+    color: var(--rahat-text-dim);
+}
+
+.faint {
+    color: var(--rahat-text-faint);
+}
+
+.label {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--rahat-text-faint);
+}
+
+/* ---------------------------------------------------------------------------------------------
+ * Primitives
+ *
+ * `@apply` is not available inside <style scoped> blocks (Tailwind leaves the build as a
+ * standalone CLI step), so the two recipes the design system reuses everywhere are plain CSS.
+ * ------------------------------------------------------------------------------------------- */
+
+/* Primary action: the crimson gradient with its warm halo. */
+.su-btn-primary {
+    background: linear-gradient(135deg, var(--crimson-deep) 0%, var(--crimson-vivid) 100%) !important;
+    color: var(--rahat-on-accent) !important;
+    border: 1px solid rgba(255, 255, 255, 0.14) !important;
+    box-shadow: 0 0 20px rgba(164, 22, 26, 0.5) !important;
+    font-weight: 700 !important;
+}
+
+.su-btn-primary:hover {
+    box-shadow: 0 0 28px rgba(208, 30, 44, 0.6) !important;
+    filter: saturate(1.08) brightness(1.04);
+}
+
+/* Floating glass surface: dock, drawer, popovers. */
+.su-glass {
+    background: var(--rahat-glass) !important;
+    backdrop-filter: blur(24px) saturate(1.4);
+    -webkit-backdrop-filter: blur(24px) saturate(1.4);
+    border: 1px solid var(--rahat-border);
+}
+
+/* The radiant neon underglow that sits beneath the dock. */
+.su-dock-aura {
+    background: linear-gradient(90deg,
+        rgba(164, 22, 26, 0.35) 0%,
+        rgba(208, 30, 44, 0.6) 50%,
+        rgba(164, 22, 26, 0.35) 100%);
+    filter: blur(18px);
+}
+
+.su-glow {
+    box-shadow: 0 0 20px rgba(164, 22, 26, 0.5);
+}
+
+/* Card surface that respects the warm palette in both themes. */
+.su-panel {
+    background: var(--rahat-card);
+    border: 1px solid var(--rahat-border);
+    border-radius: 10px;
+}
+
+/* ---------------------------------------------------------------------------------------------
+ * Vuetify surfaces
+ * ------------------------------------------------------------------------------------------- */
+
+.v-card {
+    border: 1px solid var(--rahat-border) !important;
+    border-radius: 10px !important;
+    background-color: var(--rahat-card) !important;
+    color: var(--rahat-text) !important;
+    box-shadow: var(--rahat-shadow-soft) !important;
+}
+
+/*
+ * Every sheet takes the card colour except the drawer, the dock, and the lists that live inside a
+ * menu: a menu panel is translucent, and an opaque list painted over it would hide the blur behind
+ * the glass - which is exactly what flattened the zone picker.
+ */
+.v-sheet:not(.v-navigation-drawer):not(.v-app-bar):not(.v-list) {
+    background-color: var(--rahat-card) !important;
+    color: var(--rahat-text);
+}
+
+.v-divider {
+    border-color: var(--rahat-border) !important;
+}
+
+/*
+ * Menus (the zone picker and every other v-select) render in a portal attached to the app root, so
+ * no scoped style can reach them. They get the shell's glass instead: a translucent panel with the
+ * map blurred behind it, one hairline, and rows that read as pills rather than full-bleed bands.
+ */
+.v-menu__content {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0) 45%),
+        var(--rahat-glass) !important;
+    backdrop-filter: blur(22px) saturate(140%);
+    -webkit-backdrop-filter: blur(22px) saturate(140%);
+    border: 1px solid var(--rahat-border);
+    border-radius: 14px !important;
+    padding: 6px !important;
+    box-shadow:
+        0 26px 60px rgba(0, 0, 0, 0.52),
+        0 0 0 1px rgba(255, 255, 255, 0.04),
+        inset 0 1px 0 rgba(255, 255, 255, 0.07) !important;
+}
+
+html.light .v-menu__content {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0) 45%),
+        var(--rahat-glass) !important;
+    box-shadow:
+        0 26px 60px rgba(74, 10, 16, 0.16),
+        0 0 0 1px rgba(100, 13, 20, 0.05),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
+}
+
+.v-menu__content .v-list {
+    background: transparent !important;
+    color: var(--rahat-text);
+    padding: 0 !important;
+}
+
+/* One row = one pill, on the same rhythm as the sidebar. */
+.v-menu__content .v-list-item {
+    min-height: 40px;
+    padding: 0 12px !important;
+    border-radius: 10px;
+    color: var(--rahat-text-dim) !important;
+    transition: background-color 140ms ease, color 140ms ease;
+}
+
+.v-menu__content .v-list-item::before {
+    border-radius: inherit;
+}
+
+/*
+ * The pin on the left and the tick on the right are chrome, not content: quiet grey while a row is
+ * at rest, crimson on the row in play. Vuetify's own icon margins are !important here because its
+ * `:last-of-type:not(:only-child)` rule outranks anything a single class can write back.
+ */
+.v-menu__content .v-list-item__icon {
+    color: var(--rahat-text-dim);
+    opacity: 0.72;
+    transition: color 140ms ease, opacity 140ms ease;
+}
+
+.v-menu__content .v-list-item__icon:first-child {
+    margin-right: 10px !important;
+}
+
+.v-menu__content .v-list-item__icon:last-of-type {
+    margin-right: 0 !important;
+    margin-left: 8px !important;
+}
+
+.v-menu__content .v-list-item__icon .v-icon {
+    font-size: 17px;
+}
+
+.v-menu__content .v-list-item:hover .v-list-item__icon,
+.v-menu__content .v-list-item--active .v-list-item__icon {
+    opacity: 1;
+}
+
+.v-menu__content .v-list-item:hover,
+.v-menu__content .v-list-item--highlighted {
+    background: var(--rahat-chip-hot) !important;
+    color: var(--rahat-text) !important;
+}
+
+/*
+ * The selected row used to inherit `primary--text`, which painted #A4161A onto a #A4161A wash and
+ * made the label vanish into its own highlight. It is a tinted pill with a bright label, a ticked
+ * pin and a trailing check now, so the current zone is obvious and still readable.
+ */
+.v-menu__content .v-list-item.v-list-item--active,
+.v-menu__content .v-list-item.primary--text {
+    background: var(--rahat-accent-soft) !important;
+    color: var(--rahat-text-bright) !important;
+    box-shadow: inset 0 0 0 1px var(--rahat-border);
+}
+
+.v-menu__content .v-list-item--active .v-list-item__icon,
+.v-menu__content .v-list-item--active .v-list-item__icon .v-icon {
+    color: var(--rahat-highlight);
+}
+
+/*
+ * Vuetify also paints a `currentColor` wash through ::before, which stacked a second crimson layer
+ * on top of the one above and dropped the label to ~4.2:1. Only the background here should show.
+ */
+.v-menu__content .v-list-item--active::before {
+    background-color: transparent !important;
+    opacity: 0 !important;
+}
+
+.v-menu__content .v-list-item__title {
+    font-size: 13px;
+    font-weight: inherit;
+}
+
+.v-menu__content .v-list-item--active .v-list-item__title {
+    font-weight: 600;
+    letter-spacing: 0.005em;
+}
+
+.v-dialog .v-card {
+    box-shadow: var(--rahat-shadow) !important;
+}
+
+/* ---------------------------------------------------------------------------------------------
+ * Vuetify controls
+ * ------------------------------------------------------------------------------------------- */
+
+.v-btn {
+    text-transform: none !important;
+    letter-spacing: 0.01em !important;
+    border-radius: 8px !important;
+    font-weight: 600;
+    color: var(--rahat-text-dim);
+}
+
+.v-btn--fab,
+.v-btn--icon {
+    border-radius: 50% !important;
+}
+
+/* Vuetify's default contained button is grey; the design system's is the crimson gradient. */
+.v-btn.primary,
+.v-btn.primary--text,
+.v-btn.su-primary {
+    background: linear-gradient(135deg, var(--crimson-deep) 0%, var(--crimson-vivid) 100%) !important;
+    color: var(--rahat-on-accent) !important;
+    box-shadow: 0 0 20px rgba(164, 22, 26, 0.5) !important;
+}
+
+.v-btn.primary:hover,
+.v-btn.su-primary:hover {
+    box-shadow: 0 0 28px rgba(208, 30, 44, 0.6) !important;
+    filter: brightness(1.05);
+}
+
+.v-btn.outlined:not(.primary),
+.v-btn--outlined {
+    border-color: var(--rahat-border-strong) !important;
+    background: transparent !important;
+    color: var(--rahat-text-dim) !important;
+}
+
+.v-btn.outlined:not(.primary):hover,
+.v-btn--outlined:hover {
+    border-color: var(--rahat-accent) !important;
+    color: var(--rahat-highlight) !important;
+    background: var(--rahat-accent-soft) !important;
+}
+
+.v-btn-toggle {
+    background: var(--rahat-surface-2) !important;
+    border: 1px solid var(--rahat-border) !important;
+    border-radius: 8px !important;
+}
+
+.v-btn-toggle .v-btn {
+    color: var(--rahat-text-faint) !important;
+    border-radius: 6px !important;
+}
+
+.v-btn-toggle .v-btn.v-item--active {
+    background: var(--rahat-accent) !important;
+    color: var(--rahat-on-accent) !important;
+    box-shadow: 0 0 14px rgba(164, 22, 26, 0.45) !important;
+}
+
+.v-input input,
+.v-input textarea,
+.v-select__selections,
+.v-select__selection--comma {
+    color: var(--rahat-text) !important;
+    caret-color: var(--rahat-accent-2);
+}
+
+.v-input__slot {
+    min-height: 36px !important;
+}
+
+.v-text-field--outlined fieldset {
+    border-color: var(--rahat-border-strong) !important;
+}
+
+.v-text-field--outlined:hover fieldset {
+    border-color: var(--crimson-vivid) !important;
+}
+
+.v-text-field--outlined.v-input--is-focused fieldset,
+.v-text-field--outlined.v-input--has-state fieldset {
+    border-color: var(--crimson-vivid) !important;
+    box-shadow: 0 0 0 3px rgba(164, 22, 26, 0.18);
+    border-radius: 8px;
+}
+
+.v-text-field--outlined .v-input__slot {
+    background: var(--rahat-card);
+}
+
+html.light .v-text-field--outlined .v-input__slot {
+    background: #ffffff;
+}
+
+.v-label,
+.v-input .v-label {
+    color: var(--rahat-text-faint) !important;
+}
+
+.v-messages__message {
+    color: var(--rahat-text-faint);
+}
+
+.v-chip {
+    background: var(--rahat-surface-2) !important;
+    border: 1px solid var(--rahat-border) !important;
+    border-radius: 999px !important;
+    color: var(--rahat-text-dim) !important;
+    font-weight: 600;
+}
+
+.v-alert {
+    border-radius: 10px !important;
+    border: 1px solid var(--rahat-border) !important;
+    background: var(--rahat-surface-2) !important;
+    color: var(--rahat-text) !important;
+}
+
+.v-alert.error {
+    background: var(--rahat-danger-soft) !important;
+    border-color: var(--rahat-danger) !important;
+}
+
+.v-alert.warning {
+    background: var(--rahat-warn-soft) !important;
+    border-color: var(--rahat-warn) !important;
+}
+
+.v-progress-linear {
+    border-radius: 999px;
+}
+
+.v-progress-circular {
+    color: var(--rahat-accent) !important;
+}
+
+.v-snack__content {
+    background: var(--crimson-ink) !important;
+    color: var(--crimson-pale) !important;
+    border-radius: 8px;
+}
+
+/*
+ * Tooltips: a deep ink bubble with pale rose text. The ink is dark enough that the same
+ * treatment stays legible on both the OLED canvas and the rose-white one, which is why the spec
+ * keeps it identical in both themes.
+ */
+.v-tooltip__content {
+    background: var(--crimson-ink) !important;
+    color: var(--crimson-pale) !important;
+    border-radius: 8px !important;
+    border: 1px solid rgba(251, 239, 240, 0.16);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45) !important;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 6px 10px;
+    opacity: 1 !important;
+}
+
+/* Opt-in caret, for tooltips attached to the top edge of their anchor. */
+.v-tooltip__content.su-caret::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: var(--crimson-ink);
+}
+
+/* ---------------------------------------------------------------------------------------------
+ * Tables
+ * ------------------------------------------------------------------------------------------- */
+
+.v-data-table,
+.v-simple-table,
+.v-data-table__wrapper table {
+    background: transparent !important;
+    color: var(--rahat-text);
+}
+
+.v-data-table > .v-data-table__wrapper > table > thead > tr > th,
+.v-simple-table th {
+    background: var(--rahat-surface-2) !important;
+    color: var(--rahat-text-faint) !important;
+    font-size: 11px !important;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 600 !important;
+    border-bottom: 1px solid var(--rahat-border) !important;
+}
+
+.v-data-table th:first-child {
+    border-top-left-radius: 8px;
+}
+
+.v-data-table th:last-child {
+    border-top-right-radius: 8px;
+}
+
+.v-data-table td,
+.v-simple-table td {
+    border-bottom-color: var(--rahat-border) !important;
+    color: var(--rahat-text) !important;
+}
+
+.v-data-table tr:hover:not(.v-data-table__expanded__content) {
+    background: var(--rahat-accent-soft) !important;
+}
+
+.v-data-footer {
+    border-top: 1px solid var(--rahat-border) !important;
+    color: var(--rahat-text-faint) !important;
+}
+
+/* ---------------------------------------------------------------------------------------------
+ * Leaflet
+ * ------------------------------------------------------------------------------------------- */
+
+.leaflet-container {
+    background: var(--rahat-map-bg);
+    font-family: inherit;
+}
+
+/*
+ * The basemap is plain OpenStreetMap imagery, flipped into the theme by a CSS filter. It sits in
+ * its own pane, so the before/after orthophoto and the damage overlays keep their true colours.
+ */
+html.dark .leaflet-basemap-pane {
+    filter: invert(1) hue-rotate(180deg) brightness(0.86) contrast(0.92) saturate(0.6);
+}
+
+/* Rose-white cartography for the light theme, rather than the dark inversion. */
+html.light .leaflet-basemap-pane {
+    filter: sepia(0.28) saturate(0.55) hue-rotate(-30deg) brightness(1.03) contrast(0.92);
+}
+
+.leaflet-control-attribution {
+    background: var(--rahat-glass-strong) !important;
+    color: var(--rahat-text-faint) !important;
+    font-size: 10px !important;
+    backdrop-filter: blur(12px);
+}
+
+.leaflet-control-attribution a {
+    color: var(--rahat-accent) !important;
+}
+
+.leaflet-control-scale-line {
+    background: var(--rahat-glass) !important;
+    border-color: var(--rahat-text-faint) !important;
+    color: var(--rahat-text-dim) !important;
+}
+
+.leaflet-bar,
+.leaflet-bar a,
+.leaflet-touch .leaflet-bar a {
+    background: var(--rahat-panel) !important;
+    border-color: var(--rahat-border) !important;
+    color: var(--rahat-text) !important;
+}
+
+.leaflet-bar a:hover {
+    background: var(--rahat-surface-2) !important;
+    color: var(--rahat-highlight) !important;
+}
+
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+    background: var(--rahat-panel) !important;
+    color: var(--rahat-text) !important;
+    border: 1px solid var(--rahat-border);
+    border-radius: 10px;
+    box-shadow: var(--rahat-shadow) !important;
+}
+
+.leaflet-popup-content {
+    font-size: 12px;
+    margin: 10px 12px;
+}
+
+.leaflet-tooltip {
+    background: var(--crimson-ink) !important;
+    border: 1px solid rgba(251, 239, 240, 0.16) !important;
+    color: var(--crimson-pale) !important;
+    border-radius: 8px !important;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45) !important;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 6px 10px;
+}
+
+.leaflet-tooltip-top:before {
+    border-top-color: var(--crimson-ink) !important;
+}
+
+.leaflet-tooltip-bottom:before {
+    border-bottom-color: var(--crimson-ink) !important;
+}
+
+.leaflet-tooltip-left:before {
+    border-left-color: var(--crimson-ink) !important;
+}
+
+.leaflet-tooltip-right:before {
+    border-right-color: var(--crimson-ink) !important;
+}

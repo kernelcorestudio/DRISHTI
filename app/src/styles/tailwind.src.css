@@ -1,0 +1,16 @@
+/*
+ * DISASTER RESPONSE APP
+ * Copyright (c) 2021 SilentByte <https://silentbyte.com/>
+ */
+
+/*
+ * Tailwind entry point. Compiled by the `tw` script (package.json) into tailwind.generated.css,
+ * which main.ts imports next to app.scss.
+ *
+ * Preflight is disabled in tailwind.config.js: Vuetify owns the reset for this app, and
+ * Tailwind's preflight zeroes border-widths across the board, which collapses every outlined
+ * Vuetify field and divider.
+ */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
