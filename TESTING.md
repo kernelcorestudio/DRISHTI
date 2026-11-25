@@ -97,3 +97,8 @@ npx vue-cli-service lint tests/unit/*.ts
 
 - `npx vue-cli-service test:unit --runInBand --verbose`: **4 passed test suites, 9 passed tests in 3.036s** (`dashboard.spec.ts`, `router.spec.ts`, `inference.spec.ts`, `map.spec.ts`).
 - `npx vue-cli-service lint tests/unit/*.ts`: **DONE No lint errors found!**
+
+## 6. Known Limitations & Discovered Edge Cases
+
+- **`starlette 0.27.0` / `httpx 0.28.1` `TestClient` incompatibility**: Calling `fastapi.testclient.TestClient(app)` raises `TypeError: Client.__init__() got an unexpected keyword argument 'app'`. `inference_api/tests/conftest.py` avoids downgrading dependencies by wrapping `httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app))`.
+- **`GeoTransform.from_geotiff()` on non-TIFF images**: Passing a PNG directly to `GeoTransform.from_geotiff()` raises `AttributeError` because `PngImageFile` has no `.tag` attribute (whereas TIFFs missing GeoTIFF tags raise `InferenceError`). HTTP uploads in `main.py` guard against this beforehand via `validate_upload()`.
