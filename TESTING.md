@@ -55,3 +55,13 @@ cd app
 npx vue-cli-service test:unit --runInBand --verbose
 npx vue-cli-service lint tests/unit/*.ts
 ```
+
+## 4. Tested Functionalities
+
+### A. Python Inference API (`inference_api/tests/`)
+
+- `GET /health`: Verifies `degraded` state when GeoServ is unreachable or models are missing in `real` mode, and `ready` state in `demo` mode when GeoServ is reachable.
+- `GET /diagnostics`: Validates inventory counts (`zones`, `models`, `imagery`, `queue`, `evaluation`) against isolated temporary artifacts.
+- `POST /predict/disaster`: Verifies HTTP `202` + UUID4 `job_id`, invalid `zone_id` (`400`), missing models (`503`), non-GeoTIFF extensions (`400`), empty files (`400`), oversized files (`413`), and full queue (`429`).
+- `GET /jobs` & `GET /jobs/{job_id}`: Verifies job polling to `succeeded`, RFC 7946 GeoJSON output (`bbox`, severity counts), and `404` for unknown IDs.
+- `JobQueue` & `infer.py`: Verifies serialized worker execution, failure capture, `GeoTransform`, `mask_to_polygons`, `write_geojson`, and 4-subtype `damage_scores` mapping.
