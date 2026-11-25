@@ -1,0 +1,38 @@
+{
+  "arch": "resnet34",
+  "classes": [
+    "destroyed",
+    "major-damage",
+    "minor-damage",
+    "no-damage"
+  ],
+  "crop": {
+    "mode": "bbox",
+    "size": 256,
+    "margin_px": 2,
+    "resize": "aspect_preserve_black_pad",
+    "jpeg_quality": 95
+  },
+  "normalization": {
+    "mean": [
+      0.485,
+      0.456,
+      0.406
+    ],
+    "std": [
+      0.229,
+      0.224,
+      0.225
+    ],
+    "color_order": "RGB"
+  },
+  "valid_events": [
+    "hurricane-matthew",
+    "guatemala-volcano"
+  ],
+  "trained_on": "xBD train split, 10 events, 145,957 crops",
+  "metrics": {
+    "matthew_macro_f1_4class": 0.2824,
+    "matthew_macro_f1_3class_merged": 0.3889
+  }
+}

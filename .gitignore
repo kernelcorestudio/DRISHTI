@@ -131,7 +131,8 @@ dmypy.json
 # Inference API runtime data: uploaded tile pairs and exported fastai learners,
 # neither of which belongs in version control.
 inference_api/work/
-inference_api/models/
+inference_api/models/*
+!inference_api/models/*.json
 
 # ---------------------------------------------------------------------------
 # RAHAT - local build output, downloads and artifacts

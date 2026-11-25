@@ -1,0 +1,30 @@
+{
+  "model": "stage1_footprint_unet_resnet34",
+  "arch": "unet_learner(resnet34, self_attention=True)",
+  "input_size": 384,
+  "codes": [
+    "background",
+    "border",
+    "contact",
+    "footprint"
+  ],
+  "footprint_class": 3,
+  "loss": "CombinedLoss(Focal(gamma=3) + Dice)",
+  "train_tiles": 1949,
+  "valid_tiles": 334,
+  "valid_events": [
+    "hurricane-matthew",
+    "palu-tsunami"
+  ],
+  "metrics": {
+    "footprint_iou": 0.5289,
+    "footprint_recall": 0.857,
+    "footprint_precision": 0.731,
+    "background_iou": 0.95,
+    "border_iou": 0.224,
+    "contact_iou": 0.385
+  },
+  "full_foreground_acc": 0.4643,
+  "mask_gen": "xBD pre-disaster polygons, 384px, BOUNDARY_PX=3, CONTACT_PX=8",
+  "trained": "2026-11-08"
+}
