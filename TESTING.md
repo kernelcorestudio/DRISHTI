@@ -79,3 +79,10 @@ npx vue-cli-service lint tests/unit/*.ts
 - `Router` & `App.vue`: Resolves all 10 routes plus `@lat,lng,zoomz`, wildcard `* -> /`, 10 sidebar nav items, and API unreachable error reporting.
 - `UploadForm`, `JobTable`, & `modules/api.ts`: GeoTIFF extension and size validation, `ApiRequestError` wrapping, live progress bar polling to `succeeded`, and failed job display.
 - `MapView`: Leaflet pane creation (`basemap`, `structures`), `before -> after -> none` layer cycling, and GeoJSON/heatmap layer loading.
+
+## 5. Actual Observed Test Results
+
+### Python (`inference_api/.venv311`)
+
+- `infer.py --self-test`: **20/20 checks passed**.
+- `pytest inference_api/tests -v`: **9 passed in 2.44s** (`test_api.py` + `test_jobs_and_infer.py`, 2 non-blocking Starlette/Pydantic deprecation warnings).
