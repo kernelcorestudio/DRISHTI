@@ -200,12 +200,7 @@ saved_tiles/
 outputs/
 data/reference_hr/
 
-# Nested legacy checkout & local scratch files
-RAHAT/
+# Local scratch check directory
 .ignore-check/
-generate_pdf.py
-parse_pptx.py
-dataset-metadata.json
-INNOVATE FINALS PRESENTATION TEMPLATE.pptx
 
 
