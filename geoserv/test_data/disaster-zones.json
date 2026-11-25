@@ -1,0 +1,32 @@
+[
+    {
+        "id": "0b1f8f1e-6c0a-4f3e-9a5e-000000000001",
+        "name": "New Orleans (local demo)",
+        "center": {
+            "lat": 29.9663,
+            "lng": -90.0964,
+            "zoom": 10
+        },
+        "beforeLayer": null,
+        "afterLayer": null,
+        "amenitiesUrl": "http://127.0.0.1:8088/geo/new-orleans/amenities",
+        "affectedStructuresUrl": "http://127.0.0.1:8088/geo/new-orleans/structures-affected",
+        "unaffectedStructuresUrl": "http://127.0.0.1:8088/geo/new-orleans/structures-unaffected",
+        "heatmapUrl": "http://127.0.0.1:8088/geo/new-orleans/structures-affected/heatmap"
+    },
+    {
+        "id": "0b1f8f1e-6c0a-4f3e-9a5e-000000000002",
+        "name": "Oman (local demo)",
+        "center": {
+            "lat": 23.5964,
+            "lng": 58.5245,
+            "zoom": 10
+        },
+        "beforeLayer": null,
+        "afterLayer": null,
+        "amenitiesUrl": "http://127.0.0.1:8088/geo/oman/amenities",
+        "affectedStructuresUrl": "http://127.0.0.1:8088/geo/oman/structures-affected",
+        "unaffectedStructuresUrl": "http://127.0.0.1:8088/geo/oman/structures-unaffected",
+        "heatmapUrl": "http://127.0.0.1:8088/geo/oman/structures-affected/heatmap"
+    }
+]
