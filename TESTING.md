@@ -65,3 +65,10 @@ npx vue-cli-service lint tests/unit/*.ts
 - `POST /predict/disaster`: Verifies HTTP `202` + UUID4 `job_id`, invalid `zone_id` (`400`), missing models (`503`), non-GeoTIFF extensions (`400`), empty files (`400`), oversized files (`413`), and full queue (`429`).
 - `GET /jobs` & `GET /jobs/{job_id}`: Verifies job polling to `succeeded`, RFC 7946 GeoJSON output (`bbox`, severity counts), and `404` for unknown IDs.
 - `JobQueue` & `infer.py`: Verifies serialized worker execution, failure capture, `GeoTransform`, `mask_to_polygons`, `write_geojson`, and 4-subtype `damage_scores` mapping.
+
+### B. Rust GeoServ (`geoserv/tests/geoserv_tests.rs` & `src/lib.rs`)
+
+- `KDBush`: Range queries, radius search (`within`), predicate early-stopping, and empty index safety.
+- `GeoIndexBuilder`: Polygon `bbox` indexing, `Point` amenity indexing, deduplication, and `limit` enforcement.
+- Error & Empty Handling: Empty directories, empty `FeatureCollection`, malformed JSON, non-collection GeoJSON, and `Polygon` missing `bbox`.
+- Heatmap & HTTP Routes: Centroid calculation, `/geo/{group}/{name}`, `/geo/{group}/{name}/heatmap`, `404` on unknown layers, and live `/disasters/reload` pickup of newly written disk files.
