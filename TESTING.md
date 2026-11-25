@@ -72,3 +72,10 @@ npx vue-cli-service lint tests/unit/*.ts
 - `GeoIndexBuilder`: Polygon `bbox` indexing, `Point` amenity indexing, deduplication, and `limit` enforcement.
 - Error & Empty Handling: Empty directories, empty `FeatureCollection`, malformed JSON, non-collection GeoJSON, and `Polygon` missing `bbox`.
 - Heatmap & HTTP Routes: Centroid calculation, `/geo/{group}/{name}`, `/geo/{group}/{name}/heatmap`, `404` on unknown layers, and live `/disasters/reload` pickup of newly written disk files.
+
+### C. Vue Frontend (`app/tests/unit/`)
+
+- `DashboardView`: Renders KPI cards, evaluation IoU (`0.408`), offline tile totals (`42`), zone breakdowns, and store `serviceError` alerts.
+- `Router` & `App.vue`: Resolves all 10 routes plus `@lat,lng,zoomz`, wildcard `* -> /`, 10 sidebar nav items, and API unreachable error reporting.
+- `UploadForm`, `JobTable`, & `modules/api.ts`: GeoTIFF extension and size validation, `ApiRequestError` wrapping, live progress bar polling to `succeeded`, and failed job display.
+- `MapView`: Leaflet pane creation (`basemap`, `structures`), `before -> after -> none` layer cycling, and GeoJSON/heatmap layer loading.
