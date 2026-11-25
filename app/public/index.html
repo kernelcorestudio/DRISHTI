@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+
+    <title>RAHAT</title>
+
+    <link rel="icon" href="<%= BASE_URL %>favicon.ico">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:100,300,400,500,700,900">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@latest/css/materialdesignicons.min.css">
+
+    <!--
+        The theme class has to be on <html> before the first paint. Doing it in Vue would paint
+        one frame of the default black canvas and then flash to cream for light-mode users.
+        Keep the storage key in sync with src/modules/theme.ts.
+    -->
+    <script>
+        (function () {
+            var theme = "dark";
+
+            try {
+                var forced = new URLSearchParams(window.location.search).get("theme");
+                if(forced === "light" || forced === "dark") {
+                    theme = forced;
+                } else {
+                    var stored = window.localStorage.getItem("rahat.theme");
+                    if(stored === "light" || stored === "dark") {
+                        theme = stored;
+                    }
+                }
+            } catch (error) {
+                // Storage blocked: the default theme is a fine answer.
+            }
+
+            document.documentElement.classList.add(theme);
+            document.documentElement.style.colorScheme = theme;
+        })();
+    </script>
+
+    <style>
+        /* Matches the OLED canvas so the gap before Vue mounts is not a white flash. */
+        html, body {
+            margin: 0;
+            background: #000000;
+        }
+
+        html.light, html.light body {
+            background: #FFE3B3;
+        }
+    </style>
+</head>
+<body>
+    <noscript>
+        RAHAT requires JavaScript to be enabled.
+    </noscript>
+
+    <div id="app"></div>
+</body>
+</html>
