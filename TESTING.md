@@ -86,3 +86,9 @@ npx vue-cli-service lint tests/unit/*.ts
 
 - `infer.py --self-test`: **20/20 checks passed**.
 - `pytest inference_api/tests -v`: **9 passed in 2.44s** (`test_api.py` + `test_jobs_and_infer.py`, 2 non-blocking Starlette/Pydantic deprecation warnings).
+
+### Rust (`geoserv`)
+
+- `cargo test --tests`:
+  - `src/lib.rs` (`kdbush::tests`): **5 passed, 0 failed** (`0.00s`).
+  - `tests/geoserv_tests.rs`: **4 passed, 0 failed** (`0.06s`).
