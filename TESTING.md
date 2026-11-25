@@ -102,3 +102,5 @@ npx vue-cli-service lint tests/unit/*.ts
 
 - **`starlette 0.27.0` / `httpx 0.28.1` `TestClient` incompatibility**: Calling `fastapi.testclient.TestClient(app)` raises `TypeError: Client.__init__() got an unexpected keyword argument 'app'`. `inference_api/tests/conftest.py` avoids downgrading dependencies by wrapping `httpx.AsyncClient(transport=httpx.ASGITransport(app=main.app))`.
 - **`GeoTransform.from_geotiff()` on non-TIFF images**: Passing a PNG directly to `GeoTransform.from_geotiff()` raises `AttributeError` because `PngImageFile` has no `.tag` attribute (whereas TIFFs missing GeoTIFF tags raise `InferenceError`). HTTP uploads in `main.py` guard against this beforehand via `validate_upload()`.
+- **Mock boundaries**: `app/tests/unit/map.spec.ts` mocks `leaflet` and `leaflet.heat` in jsdom; `inference_api/tests/test_api.py` isolates disk paths to `tmp_path` and runs `demo` inference rather than loading the 352 MB FastAI learners.
+- **Live E2E status**: Real-model multi-service browser E2E verification from `K:\Mp3\RAHAT` remains unexecuted in this test log.
