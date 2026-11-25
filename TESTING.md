@@ -92,3 +92,8 @@ npx vue-cli-service lint tests/unit/*.ts
 - `cargo test --tests`:
   - `src/lib.rs` (`kdbush::tests`): **5 passed, 0 failed** (`0.00s`).
   - `tests/geoserv_tests.rs`: **4 passed, 0 failed** (`0.06s`).
+
+### Vue Frontend (`app`)
+
+- `npx vue-cli-service test:unit --runInBand --verbose`: **4 passed test suites, 9 passed tests in 3.036s** (`dashboard.spec.ts`, `router.spec.ts`, `inference.spec.ts`, `map.spec.ts`).
+- `npx vue-cli-service lint tests/unit/*.ts`: **DONE No lint errors found!**
